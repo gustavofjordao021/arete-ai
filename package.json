@@ -1,14 +1,23 @@
 {
   "name": "arete",
   "version": "0.1.0",
-  "description": "Portable AI identity - Chrome extension",
-  "type": "module",
+  "private": true,
+  "description": "Portable AI identity layer",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
-    "build": "vite build"
+    "build": "npm run build:core && vite build",
+    "build:core": "npm run build -w @arete/core",
+    "test": "vitest run --config vitest.extension.config.ts",
+    "test:watch": "vitest --config vitest.extension.config.ts",
+    "test:core": "npm test -w @arete/core",
+    "test:all": "npm run test:core && npm run test"
   },
   "devDependencies": {
-    "@crxjs/vite-plugin": "^2.2.1",
-    "vite": "^7.2.6"
+    "@crxjs/vite-plugin": "^2.0.0-beta.27",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
   }
 }

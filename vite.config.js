@@ -1,7 +1,11 @@
 import { defineConfig } from 'vite';
 import { crx } from '@crxjs/vite-plugin';
 import { copyFileSync, readFileSync, writeFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import manifest from './manifest.json';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [
@@ -29,4 +33,9 @@ export default defineConfig({
       }
     }
   ],
+  resolve: {
+    alias: {
+      '@arete/core': resolve(__dirname, 'packages/core/dist/index.js'),
+    },
+  },
 });

@@ -1,4 +1,4 @@
-import { identity } from './identity.js';
+import { getIdentity, getIdentityForModel } from './identity/index.ts';
 import { getPageContext } from './context.js';
 import { callModel } from './api.js';
 import { conversation } from './conversation.js';
@@ -56,7 +56,7 @@ function estimateTokens() {
   return tokens.toString();
 }
 
-function toggleOverlay() {
+async function toggleOverlay() {
   if (overlay) {
     overlay.remove();
     overlay = null;
@@ -64,13 +64,13 @@ function toggleOverlay() {
   }
 
   const context = getPageContext();
-  const identityLines = identity.core.split('\n').filter(l => l.trim());
+  const identity = await getIdentity();
   const tokenCount = estimateTokens();
 
   // Parse identity for cleaner tags
-  const role = identityLines[0]?.replace('Senior ', '').replace(' at ', ' @ ') || 'User';
-  const tech = identityLines[2]?.replace('Technical: ', '').split(',')[0]?.trim() || 'Tech';
-  const style = identityLines[4]?.replace('Style: ', '').split(',')[0]?.trim() || 'Direct';
+  const role = identity.core.role || 'User';
+  const tech = identity.expertise[0] || 'Tech';
+  const style = identity.communication.style[0] || 'Direct';
 
   overlay = document.createElement('div');
   overlay.id = 'arete-overlay';
@@ -82,6 +82,7 @@ function toggleOverlay() {
       #arete-input::placeholder { color: #6b7280; }
       #arete-send:hover { transform: scale(1.05); }
       #arete-model:hover { border-color: rgba(45, 212, 191, 0.5); }
+      #arete-new-chat:hover { background: rgba(110, 118, 129, 0.2); color: #e6edf3; }
       #arete-overlay .arete-codeblock {
         background: rgba(45, 212, 191, 0.08);
         border: 1px solid rgba(45, 212, 191, 0.2);
@@ -148,7 +149,7 @@ function toggleOverlay() {
             Identity Active
           </div>
           <span style="color: #484f58;">·</span>
-          <span style="font-size: 13px; color: #7d8590;">${tokenCount} tokens loaded</span>
+          <span style="font-size: 13px; color: #7d8590;">${tokenCount} tokens${conversation.history.length > 0 ? ` · ${conversation.history.length} msgs` : ''}</span>
         </div>
         <div style="
           padding: 6px 10px;
@@ -238,6 +239,20 @@ function toggleOverlay() {
         border: 1px solid rgba(110, 118, 129, 0.15);
         border-radius: 12px;
       ">
+        <button id="arete-new-chat" title="Start new chat (clears history)" style="
+          width: 36px;
+          height: 36px;
+          border: 1px solid rgba(110, 118, 129, 0.3);
+          border-radius: 8px;
+          background: transparent;
+          color: #7d8590;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          transition: all 0.15s;
+        ">+</button>
         <input
           id="arete-input"
           type="text"
@@ -298,7 +313,18 @@ function toggleOverlay() {
   const responseDiv = document.getElementById('arete-response');
   const modelSelect = document.getElementById('arete-model');
   const sendBtn = document.getElementById('arete-send');
+  const newChatBtn = document.getElementById('arete-new-chat');
   input.focus();
+
+  // New chat button - clears conversation history
+  newChatBtn.addEventListener('click', async () => {
+    await conversation.clear();
+    responseDiv.innerHTML = `
+      <div style="color: #7d8590; font-size: 13px; padding: 20px 0; text-align: center;">
+        <span style="color: #2dd4bf;">✓</span> New chat started. Context reset to current page.
+      </div>
+    `;
+  });
 
   // Format AI response with styled code blocks
   function formatContent(text) {
@@ -380,10 +406,12 @@ function toggleOverlay() {
     // Use captured selection (from before overlay opened) or fall back to current
     const selection = capturedSelection || ctx.selection;
 
-    // Build page context section
-    let pageContextStr = `Current page: ${ctx.url}
-Page title: ${ctx.title}
-Page type: ${ctx.pageType}`;
+    // Build page context section - make it very explicit to override old conversation context
+    let pageContextStr = `
+=== CURRENT PAGE (focus your response here) ===
+URL: ${ctx.url}
+Title: ${ctx.title}
+Type: ${ctx.pageType}`;
 
     if (selection) {
       pageContextStr += `\n\nSelected text:\n${selection}`;
@@ -393,7 +421,8 @@ Page type: ${ctx.pageType}`;
       pageContextStr += `\n\nPage content:\n${contentPreview}${ctx.content.length > 4000 ? '...' : ''}`;
     }
 
-    const systemPrompt = `${identity.core}${learnedFacts}${browsingContext}
+    const identityPrompt = await getIdentityForModel(model);
+    const systemPrompt = `${identityPrompt}${learnedFacts}${browsingContext}
 
 ${pageContextStr}`;
 

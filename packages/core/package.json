@@ -1,0 +1,32 @@
+{
+  "name": "@arete/core",
+  "version": "0.1.0",
+  "description": "Arete identity schema, extraction, and transforms",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "node cli/index.js"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.1",
+    "vitest": "^2.1.8"
+  },
+  "files": [
+    "dist"
+  ]
+}
