@@ -13,7 +13,8 @@
     "test": "vitest run --config vitest.extension.config.ts",
     "test:watch": "vitest --config vitest.extension.config.ts",
     "test:core": "npm test -w @arete/core",
-    "test:all": "npm run test:core && npm run test"
+    "test:all": "npm run test:core && npm run test",
+    "cli": "node packages/core/dist/cli/index.js"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.27",
