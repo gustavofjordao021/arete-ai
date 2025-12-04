@@ -23,18 +23,41 @@ npm run build
 
 ---
 
+## CLI
+
+```bash
+npm run cli identity get                     # Show current identity
+npm run cli identity set "I'm a PM at..."    # Store identity from prose
+npm run cli identity transform --model claude # Output Claude system prompt
+npm run cli identity transform --model openai # Output OpenAI system prompt
+npm run cli identity clear                   # Reset identity
+npm run cli identity json                    # Raw JSON output
+```
+
+Identity stored in `~/.arete/identity.json`
+
+---
+
 ## Project Structure
 
 ```
-src/
-├── content.js       → Overlay UI, hotkey handler
-├── context.js       → Page content extraction
-├── identity.js      → User identity config
-├── conversation.js  → Message persistence
-├── api.js           → Model router (Claude/GPT)
-├── injector.js      → ChatGPT/Claude.ai injection
-├── providers/       → API implementations
-└── memory/          → Facts, pages, preferences
+packages/core/           → Shared identity library (@arete/core)
+├── src/schema/          → Zod identity schema
+├── src/extraction/      → LLM extraction prompts
+├── src/transforms/      → Claude/OpenAI formatters
+└── src/cli/             → CLI commands
+
+src/                     → Chrome extension
+├── content.js           → Overlay UI, hotkey handler
+├── context.js           → Page content extraction
+├── identity/            → Identity manager (uses @arete/core)
+├── conversation.js      → Message persistence
+├── api.js               → Model router (Claude/GPT)
+├── providers/           → API implementations
+└── memory/              → Facts, pages, preferences
+
+background.js            → Service worker (LLM extraction API)
+popup.js                 → Settings UI with identity editor
 ```
 
 ---
@@ -76,7 +99,10 @@ const ctx = getPageContext();
 ```
 
 ### Identity
-Hardcoded in `src/identity.js`. Edit `core` string to change user context.
+Edit via popup UI (View/Edit tabs) or CLI. LLM extraction uses Claude Haiku.
+- Popup: Click extension icon → Edit tab → Enter prose → Save
+- CLI: `npm run cli identity set "your description"`
+- Storage: `arete_identity` (chrome.storage) or `~/.arete/identity.json` (CLI)
 
 ---
 
@@ -99,8 +125,10 @@ Hardcoded in `src/identity.js`. Edit `core` string to change user context.
 | Overlay UI + model toggle     | User onboarding   |
 | Claude + GPT providers        | More than 2 models|
 | Identity injection            | Auth              |
-| Conversation persistence      | Settings UI       |
+| Conversation persistence      | Mem0 integration  |
 | Page context + memory         |                   |
+| Settings UI + LLM extraction  |                   |
+| CLI commands                  |                   |
 
 ---
 
