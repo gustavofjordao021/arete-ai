@@ -4,7 +4,7 @@
  */
 
 import { CLAUDE_API_KEY } from './src/keys.js';
-import { signInWithGoogle, signOut, getAuthState, initAuth } from './src/supabase';
+import { signInWithGoogle, signOut, getAuthState, initAuth, saveIdentity, loadIdentity } from './src/supabase';
 
 // Initialize Supabase auth with env vars (injected at build time)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -147,6 +147,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'SIGN_OUT') {
     signOut()
       .then(() => sendResponse({ success: true }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.type === 'SAVE_IDENTITY_TO_CLOUD') {
+    saveIdentity(request.identity)
+      .then(result => sendResponse({ success: true, result }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.type === 'LOAD_IDENTITY_FROM_CLOUD') {
+    loadIdentity()
+      .then(identity => sendResponse({ success: true, identity }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }

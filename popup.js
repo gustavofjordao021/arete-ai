@@ -230,8 +230,22 @@ async function loadStats() {
       factsList.innerHTML = '<p class="px-4 py-8 text-center text-sm text-arete-text-tertiary italic">No facts learned yet. Chat with the AI to build your memory!</p>';
     }
 
-    // Show identity from storage
-    const identity = all[IDENTITY_KEY];
+    // Show identity - prefer cloud if authenticated
+    let identity = all[IDENTITY_KEY];
+
+    if (currentUser) {
+      try {
+        const cloudIdentity = await loadIdentityFromCloud();
+        if (cloudIdentity) {
+          identity = cloudIdentity;
+          // Update local cache with cloud data
+          await chrome.storage.local.set({ [IDENTITY_KEY]: identity });
+        }
+      } catch (cloudErr) {
+        console.warn('Failed to load from cloud, using local:', cloudErr);
+      }
+    }
+
     document.getElementById('identity-preview').textContent = formatIdentityForDisplay(identity);
   } catch (err) {
     console.error('Arete popup error:', err);
@@ -342,6 +356,46 @@ function setupTabs() {
   });
 }
 
+/**
+ * Save identity to cloud via background script
+ */
+async function saveIdentityToCloud(identity) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'SAVE_IDENTITY_TO_CLOUD', identity },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (!response?.success) {
+          reject(new Error(response?.error || 'Cloud save failed'));
+        } else {
+          resolve(response.result);
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Load identity from cloud via background script
+ */
+async function loadIdentityFromCloud() {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { type: 'LOAD_IDENTITY_FROM_CLOUD' },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (!response?.success) {
+          reject(new Error(response?.error || 'Cloud load failed'));
+        } else {
+          resolve(response.identity);
+        }
+      }
+    );
+  });
+}
+
 // Save identity from prose
 async function saveIdentity() {
   const input = document.getElementById('identity-input');
@@ -363,13 +417,25 @@ async function saveIdentity() {
     // Extract identity using LLM (Claude Haiku)
     const identity = await extractIdentityWithLLM(prose);
 
-    // Save to storage
+    // Save to local storage (always)
     await chrome.storage.local.set({ [IDENTITY_KEY]: identity });
+
+    // Sync to cloud if authenticated
+    if (currentUser) {
+      status.textContent = 'Syncing to cloud...';
+      try {
+        await saveIdentityToCloud(identity);
+        status.textContent = 'Identity saved & synced to cloud!';
+      } catch (cloudErr) {
+        console.warn('Cloud sync failed:', cloudErr);
+        status.textContent = 'Saved locally (cloud sync failed)';
+      }
+    } else {
+      status.textContent = 'Identity saved! Sign in to sync across devices.';
+    }
 
     // Update display
     document.getElementById('identity-preview').textContent = formatIdentityForDisplay(identity);
-
-    status.textContent = 'Identity saved! Reload any page to use it.';
     status.className = 'text-xs text-center mt-2 text-arete-accent';
 
     // Switch back to view tab after 1.5s

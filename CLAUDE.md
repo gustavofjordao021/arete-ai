@@ -151,6 +151,26 @@ Edit via popup UI (View/Edit tabs) or CLI. LLM extraction uses Claude Haiku.
 - CLI: `npm run cli identity set "your description"`
 - Storage: `arete_identity` (chrome.storage) or `~/.arete/identity.json` (CLI)
 
+### Supabase MCP
+
+Direct database access via MCP tools. Project ID: `dvjgxddjmevmmtzqmzrm`
+
+```bash
+# List tables
+mcp__supabase__list_tables(project_id: "dvjgxddjmevmmtzqmzrm")
+
+# Apply migration (DDL)
+mcp__supabase__apply_migration(project_id: "dvjgxddjmevmmtzqmzrm", name: "create_users", query: "CREATE TABLE...")
+
+# Execute SQL (queries)
+mcp__supabase__execute_sql(project_id: "dvjgxddjmevmmtzqmzrm", query: "SELECT * FROM...")
+
+# Get logs
+mcp__supabase__get_logs(project_id: "dvjgxddjmevmmtzqmzrm", service: "postgres")
+```
+
+Use `apply_migration` for schema changes (creates versioned migrations). Use `execute_sql` for data queries.
+
 ---
 
 ## Decisions

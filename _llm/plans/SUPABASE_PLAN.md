@@ -19,7 +19,7 @@ Replace local-only storage with Supabase cloud sync, enabling:
 | Phase 0: UI Foundation | ✅ Complete | Tailwind light theme, resizable overlay |
 | Phase 1: Supabase setup | ✅ Complete | Migrations, client module, 29 tests |
 | Phase 2: Auth in extension | ✅ Complete | Google OAuth, 27 tests |
-| Phase 3: Sync service | Pending | Replace local storage with Supabase |
+| Phase 3: Sync service | ✅ Complete | Identity sync to Supabase, 14 tests |
 | Phase 4: Real-time sync | Pending | Live updates across clients |
 | Phase 5: CLI/MCP migration | Pending | Update to use Supabase |
 
