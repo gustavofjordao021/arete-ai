@@ -1,7 +1,7 @@
 # Supabase Cloud Sync Plan
 
 > Created: 2025-12-05
-> Status: Planning
+> Status: In Progress
 
 ## Goal
 
@@ -16,7 +16,8 @@ Replace local-only storage with Supabase cloud sync, enabling:
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| Phase 1: Supabase setup | Pending | Project, tables, RLS policies |
+| Phase 0: UI Foundation | ✅ Complete | Tailwind light theme, resizable overlay |
+| Phase 1: Supabase setup | ✅ Complete | Migrations, client module, 29 tests |
 | Phase 2: Auth in extension | Pending | Google OAuth via chrome.identity |
 | Phase 3: Sync service | Pending | Replace local storage with Supabase |
 | Phase 4: Real-time sync | Pending | Live updates across clients |
