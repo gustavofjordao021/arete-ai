@@ -20,7 +20,7 @@ Replace local-only storage with Supabase cloud sync, enabling:
 | Phase 1: Supabase setup | ✅ Complete | Migrations, client module, 29 tests |
 | Phase 2: Auth in extension | ✅ Complete | Google OAuth, 27 tests |
 | Phase 3: Sync service | ✅ Complete | Identity sync to Supabase, 14 tests |
-| Phase 4: Real-time sync | Pending | Live updates across clients |
+| Phase 4: Real-time sync | ✅ Complete | Realtime subscriptions, 10 tests |
 | Phase 5: CLI/MCP migration | Pending | Update to use Supabase |
 
 ---

@@ -451,6 +451,26 @@ async function saveIdentity() {
   }
 }
 
+/**
+ * Handle identity updated from another device (realtime sync)
+ */
+function handleIdentityUpdate(identity) {
+  console.log('Popup: Identity updated from another device');
+
+  // Update local cache
+  chrome.storage.local.set({ [IDENTITY_KEY]: identity });
+
+  // Update display
+  document.getElementById('identity-preview').textContent = formatIdentityForDisplay(identity);
+
+  // Show a brief notification
+  const preview = document.getElementById('identity-preview');
+  preview.classList.add('bg-arete-accent-light');
+  setTimeout(() => {
+    preview.classList.remove('bg-arete-accent-light');
+  }, 2000);
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
   // Load auth state first
@@ -465,4 +485,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('export-btn').addEventListener('click', exportData);
   document.getElementById('import-btn').addEventListener('click', importData);
   document.getElementById('clear-btn').addEventListener('click', clearAll);
+
+  // Listen for realtime identity updates from background
+  chrome.runtime.onMessage.addListener((request) => {
+    if (request.type === 'IDENTITY_UPDATED' && request.identity) {
+      handleIdentityUpdate(request.identity);
+    }
+  });
 });

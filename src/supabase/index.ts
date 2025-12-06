@@ -31,3 +31,8 @@ export {
   type ContextEventType,
   type ContextOptions,
 } from './sync';
+
+export {
+  subscribeToIdentityChanges,
+  unsubscribeAll,
+} from './realtime';

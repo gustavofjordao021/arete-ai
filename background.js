@@ -4,7 +4,50 @@
  */
 
 import { CLAUDE_API_KEY } from './src/keys.js';
-import { signInWithGoogle, signOut, getAuthState, initAuth, saveIdentity, loadIdentity } from './src/supabase';
+import { signInWithGoogle, signOut, getAuthState, initAuth, saveIdentity, loadIdentity, subscribeToIdentityChanges, unsubscribeAll } from './src/supabase';
+
+// Track realtime subscription
+let identityUnsubscribe = null;
+
+/**
+ * Start listening for realtime identity changes
+ * Broadcasts to popup when identity updates from another device
+ */
+async function startRealtimeSync() {
+  // Clean up existing subscription
+  if (identityUnsubscribe) {
+    await identityUnsubscribe();
+    identityUnsubscribe = null;
+  }
+
+  try {
+    identityUnsubscribe = await subscribeToIdentityChanges((identity) => {
+      console.log('Arete: Identity updated from another device');
+      // Broadcast to any open popup/content scripts
+      chrome.runtime.sendMessage({
+        type: 'IDENTITY_UPDATED',
+        identity,
+      }).catch(() => {
+        // Ignore errors if no listeners (popup closed)
+      });
+    });
+    console.log('Arete: Realtime sync started');
+  } catch (err) {
+    console.warn('Arete: Could not start realtime sync:', err.message);
+  }
+}
+
+/**
+ * Stop realtime sync (on sign out)
+ */
+async function stopRealtimeSync() {
+  if (identityUnsubscribe) {
+    await identityUnsubscribe();
+    identityUnsubscribe = null;
+  }
+  await unsubscribeAll();
+  console.log('Arete: Realtime sync stopped');
+}
 
 // Initialize Supabase auth with env vars (injected at build time)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -13,6 +56,13 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 if (SUPABASE_URL && SUPABASE_ANON_KEY) {
   initAuth({ supabaseUrl: SUPABASE_URL, supabaseAnonKey: SUPABASE_ANON_KEY });
   console.log('Arete: Supabase auth initialized');
+
+  // Start realtime sync if already authenticated
+  getAuthState().then((state) => {
+    if (state.isAuthenticated) {
+      startRealtimeSync();
+    }
+  });
 } else {
   console.warn('Arete: Supabase credentials not configured');
 }
@@ -139,13 +189,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
   if (request.type === 'SIGN_IN_WITH_GOOGLE') {
     signInWithGoogle()
-      .then(user => sendResponse({ success: true, user }))
+      .then(async (user) => {
+        // Start realtime sync after sign in
+        await startRealtimeSync();
+        sendResponse({ success: true, user });
+      })
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }
 
   if (request.type === 'SIGN_OUT') {
-    signOut()
+    // Stop realtime sync before sign out
+    stopRealtimeSync()
+      .then(() => signOut())
       .then(() => sendResponse({ success: true }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
