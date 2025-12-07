@@ -5,9 +5,10 @@
  * Provides identity and context tools for Claude Desktop.
  *
  * Tools:
- *   arete_get_identity      - Get user identity for system prompt injection
+ *   arete_get_identity       - Get user identity for system prompt injection
  *   arete_get_recent_context - Get recent browsing/interaction context
  *   arete_add_context_event  - Record a new context event (insight, etc.)
+ *   arete_update_identity    - Update identity sections with user approval
  */
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -15,6 +16,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import * as z from "zod";
 import { getIdentityHandler } from "./tools/identity.js";
 import { getContextHandler, addContextEventHandler } from "./tools/context.js";
+import { updateIdentityHandler } from "./tools/identity-update.js";
 
 const server = new McpServer({
   name: "arete",
@@ -114,6 +116,45 @@ server.registerTool(
   },
   async (input) => {
     const result = await addContextEventHandler(input);
+    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+    return {
+      content: [
+        ...result.content,
+        { type: "text" as const, text: `\n---\n${jsonContent}` },
+      ],
+    };
+  }
+);
+
+// --- arete_update_identity ---
+server.registerTool(
+  "arete_update_identity",
+  {
+    title: "Update User Identity",
+    description:
+      "Updates user identity sections based on observed patterns. " +
+      "IMPORTANT: Always ask the user for approval BEFORE calling this tool. " +
+      "Present your reasoning and proposed change, wait for confirmation. " +
+      "Protected sections (core, meta, privacy) cannot be modified.",
+    inputSchema: {
+      section: z
+        .enum(["expertise", "currentFocus", "context", "communication", "custom"])
+        .describe("Which identity section to update"),
+      operation: z
+        .enum(["add", "set", "remove"])
+        .describe("add: append to array, set: replace value, remove: delete from array"),
+      field: z
+        .string()
+        .optional()
+        .describe("Nested field path (e.g., 'projects' for currentFocus.projects)"),
+      value: z.any().describe("The value to add/set/remove"),
+      reasoning: z
+        .string()
+        .describe("Brief explanation of why this update was made"),
+    },
+  },
+  async (input) => {
+    const result = await updateIdentityHandler(input);
     const jsonContent = JSON.stringify(result.structuredContent, null, 2);
     return {
       content: [

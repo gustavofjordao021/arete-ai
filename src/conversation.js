@@ -18,6 +18,16 @@ export const conversation = {
       model: metadata.model,
     });
     await chrome.storage.local.set({ [STORAGE_KEY]: this.history });
+
+    // Sync to cloud via background script
+    chrome.runtime.sendMessage({
+      type: 'SYNC_CONVERSATION',
+      role,
+      content,
+      metadata: { url: metadata.url, model: metadata.model },
+    }).catch(() => {
+      // Ignore errors if background script not available
+    });
   },
 
   async clear() {

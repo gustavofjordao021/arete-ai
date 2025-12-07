@@ -1,0 +1,124 @@
+/* Preview-specific styles */
+
+/* Serif font for headlines (Option A) */
+.font-serif {
+  font-family: 'Fraunces', Georgia, serif;
+}
+
+/* Mono font for labels */
+.font-mono {
+  font-family: 'Geist Mono', monospace;
+}
+
+/* Atmospheric gradient backgrounds (Option C) */
+.bg-atmospheric {
+  background:
+    radial-gradient(ellipse at 20% 0%, hsl(168 76% 42% / 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 100%, hsl(168 76% 42% / 0.1) 0%, transparent 50%),
+    hsl(0 0% 7%);
+}
+
+.bg-atmospheric-card {
+  background:
+    linear-gradient(135deg, hsl(0 0% 9%) 0%, hsl(0 0% 7%) 100%);
+  border: 1px solid hsl(0 0% 18%);
+}
+
+/* Mesh gradient effect */
+.bg-mesh {
+  background:
+    radial-gradient(at 40% 20%, hsl(168 76% 42% / 0.2) 0px, transparent 50%),
+    radial-gradient(at 80% 0%, hsl(168 50% 30% / 0.15) 0px, transparent 50%),
+    radial-gradient(at 0% 50%, hsl(168 76% 42% / 0.1) 0px, transparent 50%),
+    radial-gradient(at 80% 50%, hsl(200 50% 20% / 0.1) 0px, transparent 50%),
+    radial-gradient(at 0% 100%, hsl(168 76% 42% / 0.15) 0px, transparent 50%),
+    hsl(0 0% 7%);
+}
+
+/* Noise texture overlay */
+.noise-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  pointer-events: none;
+}
+
+/* Glow effect for accent elements */
+.glow-teal {
+  box-shadow: 0 0 20px hsl(168 76% 42% / 0.3);
+}
+
+/* Orange dot marker (Giga-style) */
+.marker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+  display: inline-block;
+  margin-right: 8px;
+}
+
+/* Divider line */
+.divider-line {
+  height: 1px;
+  background: linear-gradient(90deg, hsl(0 0% 18%) 0%, hsl(0 0% 25%) 50%, hsl(0 0% 18%) 100%);
+}
+
+/* Preview switcher */
+.preview-switcher {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  background: hsl(0 0% 9%);
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid hsl(0 0% 18%);
+}
+
+.preview-switcher button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.preview-switcher button.active {
+  background: hsl(168 76% 42%);
+  color: white;
+}
+
+.preview-switcher button:not(.active) {
+  background: hsl(0 0% 14%);
+  color: hsl(0 0% 64%);
+}
+
+.preview-switcher button:not(.active):hover {
+  background: hsl(0 0% 18%);
+  color: hsl(0 0% 95%);
+}
+
+/* Feature cards grid */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+/* Large headline */
+.headline-xl {
+  font-size: 3rem;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+/* Smooth transitions between variants */
+.transition-theme {
+  transition: background 0.5s ease, color 0.3s ease;
+}

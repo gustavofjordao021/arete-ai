@@ -6,8 +6,13 @@ import {
   createClaudeTransform,
   createOpenAITransform,
 } from "@arete/core";
+import { getAuthState } from "../supabase/auth";
+import { saveIdentity as saveIdentityToCloud, loadIdentity as loadIdentityFromCloud } from "../supabase/sync";
 
 export const STORAGE_KEY = "arete_identity";
+
+// Cache for cloud sync status
+let lastCloudSync: Date | null = null;
 
 /**
  * Get the device ID (extension ID or generated)
@@ -21,12 +26,34 @@ function getDeviceId(): string {
 
 /**
  * Get the current identity from storage
+ * Tries cloud first if authenticated, falls back to local storage
  */
 export async function getIdentity(): Promise<AreteIdentity> {
   if (typeof chrome === "undefined" || !chrome.storage?.local) {
     return createEmptyIdentity(getDeviceId());
   }
 
+  // Try to load from cloud if authenticated
+  try {
+    const authState = await getAuthState();
+    if (authState.isAuthenticated) {
+      const cloudData = await loadIdentityFromCloud();
+      if (cloudData) {
+        // Cloud data uses generic format, convert to AreteIdentity
+        const cloudIdentity = safeParseIdentity(cloudData);
+        if (cloudIdentity) {
+          // Cache to local storage for offline access
+          await chrome.storage.local.set({ [STORAGE_KEY]: cloudIdentity });
+          lastCloudSync = new Date();
+          return cloudIdentity;
+        }
+      }
+    }
+  } catch {
+    // Cloud fetch failed, fall back to local
+  }
+
+  // Fall back to local storage
   const result = await chrome.storage.local.get([STORAGE_KEY]);
   const stored = result[STORAGE_KEY];
 
@@ -66,6 +93,7 @@ export async function getIdentityForModel(model: string): Promise<string> {
 
 /**
  * Update identity with partial data (merges with existing)
+ * Syncs to cloud when authenticated
  */
 export async function updateIdentity(
   updates: Partial<AreteIdentity>
@@ -73,11 +101,33 @@ export async function updateIdentity(
   const existing = await getIdentity();
   const merged = mergeIdentity(existing, updates);
 
+  // Update lastModified
+  merged.meta.lastModified = new Date().toISOString();
+
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     await chrome.storage.local.set({ [STORAGE_KEY]: merged });
   }
 
+  // Sync to cloud if authenticated (best effort)
+  try {
+    const authState = await getAuthState();
+    if (authState.isAuthenticated) {
+      await saveIdentityToCloud(merged as Record<string, unknown>);
+      lastCloudSync = new Date();
+    }
+  } catch {
+    // Cloud sync failed, but local save succeeded
+    console.error("Identity cloud sync failed");
+  }
+
   return merged;
+}
+
+/**
+ * Get the last cloud sync timestamp
+ */
+export function getLastCloudSync(): Date | null {
+  return lastCloudSync;
 }
 
 /**

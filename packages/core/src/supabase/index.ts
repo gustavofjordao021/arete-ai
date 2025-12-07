@@ -1,7 +1,7 @@
 /**
  * Supabase integration for Arete
  *
- * @example
+ * @example Browser (with OAuth):
  * ```typescript
  * import { createAreteClient } from '@arete/core/supabase';
  *
@@ -18,8 +18,27 @@
  *   console.log('Identity updated:', identity);
  * });
  * ```
+ *
+ * @example CLI (with API key):
+ * ```typescript
+ * import { createCLIClient, loadConfig, getSupabaseUrl } from '@arete/core/supabase';
+ *
+ * const config = loadConfig();
+ * if (!config.apiKey) {
+ *   console.log('Run: arete auth login');
+ *   process.exit(1);
+ * }
+ *
+ * const client = createCLIClient({
+ *   supabaseUrl: getSupabaseUrl(),
+ *   apiKey: config.apiKey,
+ * });
+ *
+ * const identity = await client.getIdentity();
+ * ```
  */
 
+// Browser client (OAuth)
 export {
   createAreteClient,
   getSupabaseConfig,
@@ -29,4 +48,16 @@ export {
   type ContextEvent,
   type ContextEventInput,
   type ContextQueryOptions,
-} from './client';
+} from './client.js';
+
+// CLI client (API key)
+export {
+  createCLIClient,
+  loadConfig,
+  saveConfig,
+  clearConfig,
+  getSupabaseUrl,
+  type CLIClient,
+  type CLIClientOptions,
+  type CLIConfig,
+} from './cli-client.js';

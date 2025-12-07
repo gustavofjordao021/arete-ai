@@ -235,11 +235,39 @@ async function loadStats() {
 
     if (currentUser) {
       try {
+        // Load identity from cloud
         const cloudIdentity = await loadIdentityFromCloud();
         if (cloudIdentity) {
           identity = cloudIdentity;
           // Update local cache with cloud data
           await chrome.storage.local.set({ [IDENTITY_KEY]: identity });
+        }
+
+        // Load and merge context from cloud
+        await loadContextFromCloud();
+        // Reload stats after merge
+        const updated = await getAllStorage();
+        const updatedFacts = updated[`${PREFIX}facts_learned`] || [];
+        const updatedPages = updated[`${PREFIX}context_pages`] || [];
+        const updatedConvo = updated['arete_conversation'] || [];
+
+        // Update UI with merged data
+        document.getElementById('facts-count').textContent = updatedFacts.length;
+        updateProgressBar('facts-bar', Math.round((updatedFacts.length / LIMITS.maxFacts) * 100));
+        document.getElementById('pages-count').textContent = updatedPages.length;
+        updateProgressBar('pages-bar', Math.round((updatedPages.length / LIMITS.maxPages) * 100));
+        document.getElementById('messages-count').textContent = updatedConvo.length;
+
+        // Update facts list display
+        const factsList = document.getElementById('facts-list');
+        if (updatedFacts.length > 0) {
+          factsList.innerHTML = '<div class="divide-y divide-arete-border">' +
+            updatedFacts
+              .slice(-10)
+              .reverse()
+              .map(f => `<div class="px-4 py-3 text-sm text-arete-text">${f.fact || f}</div>`)
+              .join('') +
+            '</div>';
         }
       } catch (cloudErr) {
         console.warn('Failed to load from cloud, using local:', cloudErr);
@@ -394,6 +422,80 @@ async function loadIdentityFromCloud() {
       }
     );
   });
+}
+
+/**
+ * Load context (pages, facts, conversation) from cloud
+ * Merges cloud data with local data (cloud takes precedence for newer items)
+ */
+async function loadContextFromCloud() {
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: 'LOAD_CONTEXT_FROM_CLOUD' },
+      async (response) => {
+        if (chrome.runtime.lastError || !response?.success) {
+          console.warn('Failed to load context from cloud');
+          resolve(null);
+          return;
+        }
+
+        const { pages, facts, conversation } = response;
+
+        // Merge pages - dedupe by URL, keep newest
+        if (pages && pages.length > 0) {
+          const localData = await chrome.storage.local.get(`${PREFIX}context_pages`);
+          const localPages = localData[`${PREFIX}context_pages`] || [];
+          const merged = mergeByKey([...pages, ...localPages], 'url', LIMITS.maxPages);
+          await chrome.storage.local.set({ [`${PREFIX}context_pages`]: merged });
+          console.log('Arete: Merged', merged.length, 'pages from cloud');
+        }
+
+        // Merge facts - dedupe by fact text
+        if (facts && facts.length > 0) {
+          const localData = await chrome.storage.local.get(`${PREFIX}facts_learned`);
+          const localFacts = localData[`${PREFIX}facts_learned`] || [];
+          const merged = mergeByKey([...facts, ...localFacts], 'fact', LIMITS.maxFacts);
+          await chrome.storage.local.set({ [`${PREFIX}facts_learned`]: merged });
+          console.log('Arete: Merged', merged.length, 'facts from cloud');
+        }
+
+        // Merge conversation - dedupe by timestamp, sort chronologically
+        if (conversation && conversation.length > 0) {
+          const localData = await chrome.storage.local.get('arete_conversation');
+          const localConvo = localData['arete_conversation'] || [];
+          const all = [...conversation, ...localConvo];
+          // Dedupe by timestamp (unique enough for messages)
+          const seen = new Set();
+          const merged = all.filter(m => {
+            const key = `${m.timestamp}-${m.role}`;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          }).sort((a, b) => a.timestamp - b.timestamp);
+          await chrome.storage.local.set({ 'arete_conversation': merged });
+          console.log('Arete: Merged', merged.length, 'messages from cloud');
+        }
+
+        resolve({ pages, facts, conversation });
+      }
+    );
+  });
+}
+
+/**
+ * Merge arrays by a key, keeping newest entries (by timestamp)
+ */
+function mergeByKey(items, key, limit) {
+  const seen = new Map();
+  for (const item of items) {
+    const k = item[key];
+    if (!seen.has(k) || (item.timestamp || 0) > (seen.get(k).timestamp || 0)) {
+      seen.set(k, item);
+    }
+  }
+  return Array.from(seen.values())
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .slice(0, limit);
 }
 
 // Save identity from prose

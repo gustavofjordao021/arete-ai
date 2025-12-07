@@ -36,3 +36,12 @@ export {
   subscribeToIdentityChanges,
   unsubscribeAll,
 } from './realtime';
+
+export {
+  syncPageVisit,
+  syncFact,
+  syncConversationMessage,
+  loadPagesFromCloud,
+  loadFactsFromCloud,
+  loadConversationFromCloud,
+} from './context-sync';

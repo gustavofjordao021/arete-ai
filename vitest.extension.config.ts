@@ -3,12 +3,15 @@ import { resolve } from "path";
 
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts", "src/**/*.test.js"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.test.js"],
     globals: false,
+    environment: "happy-dom",
+    setupFiles: ["./vitest.setup.ts"],
   },
   resolve: {
     alias: {
-      "@arete/core": resolve(__dirname, "packages/core/dist/index.js"),
+      "@": resolve(__dirname, "src"),
+      "@arete/core": resolve(__dirname, "packages/core/dist/browser.js"),
     },
   },
 });

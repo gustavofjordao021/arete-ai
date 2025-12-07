@@ -37,6 +37,16 @@ export async function recordPageVisit(url, title) {
 
     await memory.set('context', 'pages', pages);
     console.log('Arete: Recorded page visit:', hostname);
+
+    // Sync to cloud via background script
+    chrome.runtime.sendMessage({
+      type: 'SYNC_PAGE_VISIT',
+      url,
+      title: title || hostname,
+      hostname,
+    }).catch(() => {
+      // Ignore errors if background script not available
+    });
   } catch (err) {
     console.warn('Arete: Failed to record page visit:', err.message);
   }

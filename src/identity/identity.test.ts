@@ -1,11 +1,25 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// Mock supabase auth BEFORE importing manager
+vi.mock("../supabase/auth", () => ({
+  getAuthState: vi.fn(() => Promise.resolve({ isAuthenticated: false, user: null, loading: false })),
+}));
+
+vi.mock("../supabase/sync", () => ({
+  saveIdentity: vi.fn(() => Promise.resolve({ id: "test-id" })),
+  loadIdentity: vi.fn(() => Promise.resolve(null)),
+}));
+
 import {
   getIdentity,
   getIdentityForModel,
   updateIdentity,
   setIdentityFromProse,
   STORAGE_KEY,
+  getLastCloudSync,
 } from "./manager";
+import { getAuthState } from "../supabase/auth";
+import { saveIdentity as saveIdentityToCloud, loadIdentity as loadIdentityFromCloud } from "../supabase/sync";
 
 // Mock chrome.storage.local
 const mockStorage: Record<string, unknown> = {};
@@ -203,5 +217,153 @@ describe("Identity Manager", () => {
 describe("Storage Key", () => {
   it("uses arete_ prefix", () => {
     expect(STORAGE_KEY).toBe("arete_identity");
+  });
+});
+
+describe("Cloud Sync", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(mockStorage)) {
+      delete mockStorage[key];
+    }
+    vi.clearAllMocks();
+  });
+
+  describe("getIdentity with cloud", () => {
+    it("loads from cloud when authenticated", async () => {
+      const cloudIdentity = {
+        meta: {
+          version: "1.0.0",
+          lastModified: new Date().toISOString(),
+          deviceId: "cloud-device",
+        },
+        core: { name: "Cloud User", role: "Engineer" },
+        communication: { style: ["concise"], format: [], avoid: [] },
+        expertise: ["Supabase"],
+        currentFocus: { projects: [], goals: [] },
+        context: { personal: [], professional: [] },
+        privacy: { public: [], private: [], localOnly: [] },
+        custom: {},
+        sources: [],
+      };
+
+      vi.mocked(getAuthState).mockResolvedValueOnce({
+        isAuthenticated: true,
+        user: { id: "user-123", email: "test@test.com" },
+        loading: false,
+      });
+      vi.mocked(loadIdentityFromCloud).mockResolvedValueOnce(cloudIdentity);
+
+      const identity = await getIdentity();
+
+      expect(identity.core.name).toBe("Cloud User");
+      expect(identity.expertise).toContain("Supabase");
+      expect(loadIdentityFromCloud).toHaveBeenCalled();
+    });
+
+    it("falls back to local when cloud fails", async () => {
+      mockStorage[STORAGE_KEY] = {
+        meta: {
+          version: "1.0.0",
+          lastModified: new Date().toISOString(),
+          deviceId: "local",
+        },
+        core: { name: "Local User" },
+        communication: { style: [], format: [], avoid: [] },
+        expertise: ["TypeScript"],
+        currentFocus: { projects: [], goals: [] },
+        context: { personal: [], professional: [] },
+        privacy: { public: [], private: [], localOnly: [] },
+        custom: {},
+        sources: [],
+      };
+
+      vi.mocked(getAuthState).mockResolvedValueOnce({
+        isAuthenticated: true,
+        user: { id: "user-123" },
+        loading: false,
+      });
+      vi.mocked(loadIdentityFromCloud).mockRejectedValueOnce(new Error("Network error"));
+
+      const identity = await getIdentity();
+
+      expect(identity.core.name).toBe("Local User");
+    });
+
+    it("uses local when not authenticated", async () => {
+      mockStorage[STORAGE_KEY] = {
+        meta: {
+          version: "1.0.0",
+          lastModified: new Date().toISOString(),
+          deviceId: "local",
+        },
+        core: { name: "Offline User" },
+        communication: { style: [], format: [], avoid: [] },
+        expertise: [],
+        currentFocus: { projects: [], goals: [] },
+        context: { personal: [], professional: [] },
+        privacy: { public: [], private: [], localOnly: [] },
+        custom: {},
+        sources: [],
+      };
+
+      vi.mocked(getAuthState).mockResolvedValueOnce({
+        isAuthenticated: false,
+        user: null,
+        loading: false,
+      });
+
+      const identity = await getIdentity();
+
+      expect(identity.core.name).toBe("Offline User");
+      expect(loadIdentityFromCloud).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("updateIdentity with cloud", () => {
+    it("syncs to cloud when authenticated", async () => {
+      vi.mocked(getAuthState).mockResolvedValue({
+        isAuthenticated: true,
+        user: { id: "user-123" },
+        loading: false,
+      });
+
+      await updateIdentity({
+        core: { name: "Updated User" },
+      });
+
+      expect(saveIdentityToCloud).toHaveBeenCalled();
+    });
+
+    it("does not sync when not authenticated", async () => {
+      vi.mocked(getAuthState).mockResolvedValue({
+        isAuthenticated: false,
+        user: null,
+        loading: false,
+      });
+
+      await updateIdentity({
+        core: { name: "Local Only User" },
+      });
+
+      expect(saveIdentityToCloud).not.toHaveBeenCalled();
+    });
+
+    it("continues on cloud sync failure", async () => {
+      vi.mocked(getAuthState).mockResolvedValue({
+        isAuthenticated: true,
+        user: { id: "user-123" },
+        loading: false,
+      });
+      vi.mocked(saveIdentityToCloud).mockRejectedValueOnce(new Error("Network error"));
+
+      // Should not throw
+      await updateIdentity({
+        core: { name: "Sync Failed User" },
+      });
+
+      // Local storage should still be updated
+      const identity = await getIdentity();
+      expect(identity.core.name).toBe("Sync Failed User");
+    });
   });
 });

@@ -3,6 +3,10 @@
  * Arete CLI - Identity and context management
  *
  * Usage:
+ *   arete auth login                      Login with API key
+ *   arete auth logout                     Clear credentials
+ *   arete auth whoami                     Show current user
+ *
  *   arete identity get                    Show current identity
  *   arete identity set "prose..."         Extract and store identity from prose
  *   arete identity transform --model X    Output system prompt for model
@@ -31,10 +35,44 @@ import {
   importFromExtension,
   type ListContextOptions,
 } from "./context.js";
+import {
+  cmdAuthLogin,
+  cmdAuthLogout,
+  cmdAuthWhoami,
+  cmdAuthStatus,
+  cmdAuthHelp,
+} from "./auth.js";
+import {
+  loadConfig,
+  createCLIClient,
+  type CLIClient,
+} from "../supabase/cli-client.js";
 
 // Storage location
 const CONFIG_DIR = join(homedir(), ".arete");
 const IDENTITY_FILE = join(CONFIG_DIR, "identity.json");
+
+/**
+ * Check if user is authenticated with cloud
+ */
+function isAuthenticated(): boolean {
+  const config = loadConfig();
+  return !!(config.apiKey && config.supabaseUrl);
+}
+
+/**
+ * Get CLI client for cloud operations
+ */
+function getCloudClient(): CLIClient | null {
+  const config = loadConfig();
+  if (!config.apiKey || !config.supabaseUrl) {
+    return null;
+  }
+  return createCLIClient({
+    supabaseUrl: config.supabaseUrl,
+    apiKey: config.apiKey,
+  });
+}
 
 function ensureConfigDir(): void {
   if (!existsSync(CONFIG_DIR)) {
@@ -90,12 +128,34 @@ function formatIdentity(identity: AreteIdentity): string {
 }
 
 // Commands
-function cmdGet(): void {
+async function cmdGet(): Promise<void> {
+  const client = getCloudClient();
+
+  if (client) {
+    // Try cloud first
+    try {
+      console.log("(synced from cloud)");
+      const identity = await client.getIdentity();
+      if (identity) {
+        console.log(formatIdentity(identity));
+        // Also cache locally
+        saveIdentity(identity);
+      } else {
+        console.log("No identity configured in cloud.");
+      }
+      return;
+    } catch (err) {
+      console.warn(`Cloud sync failed: ${(err as Error).message}`);
+      console.log("Falling back to local...\n");
+    }
+  }
+
+  // Fallback to local
   const identity = loadIdentity();
   console.log(formatIdentity(identity));
 }
 
-function cmdSet(prose: string): void {
+async function cmdSet(prose: string): Promise<void> {
   if (!prose) {
     console.error("Usage: arete identity set \"your description here\"");
     process.exit(1);
@@ -110,12 +170,36 @@ function cmdSet(prose: string): void {
   identity.meta.lastModified = new Date().toISOString();
   saveIdentity(identity);
 
+  // Sync to cloud if authenticated
+  const client = getCloudClient();
+  if (client) {
+    try {
+      await client.saveIdentity(identity);
+      console.log("(synced to cloud)");
+    } catch (err) {
+      console.warn(`Cloud sync failed: ${(err as Error).message}`);
+    }
+  }
+
   console.log("\nIdentity updated:");
   console.log(formatIdentity(identity));
 }
 
-function cmdTransform(model: string): void {
-  const identity = loadIdentity();
+async function cmdTransform(model: string): Promise<void> {
+  // Get identity from cloud if authenticated
+  let identity: AreteIdentity;
+  const client = getCloudClient();
+
+  if (client) {
+    try {
+      const cloudIdentity = await client.getIdentity();
+      identity = cloudIdentity || loadIdentity();
+    } catch {
+      identity = loadIdentity();
+    }
+  } else {
+    identity = loadIdentity();
+  }
 
   let result: string;
   if (model === "claude" || model === "anthropic") {
@@ -132,21 +216,90 @@ function cmdTransform(model: string): void {
   console.log(result);
 }
 
-function cmdClear(): void {
+async function cmdClear(): Promise<void> {
   const identity = createEmptyIdentity("cli");
   saveIdentity(identity);
-  console.log("Identity cleared.");
+
+  // Also clear in cloud if authenticated
+  const client = getCloudClient();
+  if (client) {
+    try {
+      await client.saveIdentity(identity);
+      console.log("Identity cleared (local + cloud).");
+    } catch (err) {
+      console.warn(`Cloud sync failed: ${(err as Error).message}`);
+      console.log("Identity cleared (local only).");
+    }
+  } else {
+    console.log("Identity cleared.");
+  }
 }
 
 // Context commands
-function cmdContextList(options: ListContextOptions): void {
+async function cmdContextList(options: ListContextOptions): Promise<void> {
+  const client = getCloudClient();
+
+  if (client) {
+    // Try cloud first
+    try {
+      console.log("(from cloud)");
+      const events = await client.getRecentContext({
+        type: options.type as "page_visit" | "selection" | "conversation" | "insight" | "file" | undefined,
+        source: options.source,
+        limit: options.limit,
+      });
+
+      if (events.length === 0) {
+        console.log("No context events found.");
+        return;
+      }
+
+      // Format events for display
+      for (const event of events) {
+        const date = new Date(event.timestamp).toLocaleString();
+        const data = event.data as Record<string, unknown>;
+        let summary = "";
+
+        if (event.type === "page_visit") {
+          summary = `${data.title || data.url}`;
+        } else if (event.type === "insight") {
+          summary = `${data.fact || data.insight}`;
+        } else if (event.type === "conversation") {
+          summary = `${data.content?.toString().slice(0, 50)}...`;
+        } else {
+          summary = JSON.stringify(data).slice(0, 50);
+        }
+
+        console.log(`[${date}] ${event.type} (${event.source}): ${summary}`);
+      }
+      return;
+    } catch (err) {
+      console.warn(`Cloud fetch failed: ${(err as Error).message}`);
+      console.log("Falling back to local...\n");
+    }
+  }
+
+  // Fallback to local
   const events = listContextEvents(options);
   console.log(formatContextList(events));
 }
 
-function cmdContextClear(): void {
+async function cmdContextClear(): Promise<void> {
   clearContextStore();
-  console.log("Context cleared.");
+
+  // Also clear in cloud if authenticated
+  const client = getCloudClient();
+  if (client) {
+    try {
+      await client.clearContext();
+      console.log("Context cleared (local + cloud).");
+    } catch (err) {
+      console.warn(`Cloud clear failed: ${(err as Error).message}`);
+      console.log("Context cleared (local only).");
+    }
+  } else {
+    console.log("Context cleared.");
+  }
 }
 
 async function cmdContextImport(filePath: string): Promise<void> {
@@ -189,13 +342,20 @@ function cmdHelp(): void {
   console.log(`
 Arete CLI - Portable AI Identity & Context
 
-Commands:
+Authentication:
+  arete auth login                      Login with API key (for cloud sync)
+  arete auth logout                     Clear stored credentials
+  arete auth whoami                     Show current user
+  arete auth status                     Show authentication status
+
+Identity:
   arete identity get                    Show current identity
   arete identity set "prose..."         Store identity from prose
   arete identity transform --model X    Output system prompt (claude|openai)
   arete identity clear                  Clear stored identity
   arete identity json                   Output raw JSON
 
+Context:
   arete context list                    Show recent context events
   arete context list --type TYPE        Filter by type
   arete context list --limit N          Limit results
@@ -203,10 +363,10 @@ Commands:
   arete context import <file>           Import from Chrome extension
 
 Examples:
+  arete auth login
   arete identity set "I'm a PM at fintech, prefer concise responses"
   arete identity transform --model claude
   arete context list --type page_visit --limit 5
-  arete context import ~/Downloads/arete-export.json
 `);
 }
 
@@ -220,22 +380,58 @@ const args = process.argv.slice(2);
 const command = args[0];
 const subcommand = args[1];
 
-if (command === "identity" || command === "id") {
+// Auth commands
+if (command === "auth") {
+  switch (subcommand) {
+    case "login":
+      cmdAuthLogin(args[2]).catch((e) => {
+        console.error("Login failed:", e.message);
+        process.exit(1);
+      });
+      break;
+    case "logout":
+      cmdAuthLogout();
+      break;
+    case "whoami":
+      cmdAuthWhoami().catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
+      break;
+    case "status":
+      cmdAuthStatus();
+      break;
+    default:
+      cmdAuthHelp();
+  }
+} else if (command === "identity" || command === "id") {
   switch (subcommand) {
     case "get":
-      cmdGet();
+      cmdGet().catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
       break;
     case "set":
-      cmdSet(args.slice(2).join(" "));
+      cmdSet(args.slice(2).join(" ")).catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
       break;
     case "transform": {
       const modelIdx = args.indexOf("--model");
       const model = modelIdx !== -1 ? args[modelIdx + 1] : "claude";
-      cmdTransform(model);
+      cmdTransform(model).catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
       break;
     }
     case "clear":
-      cmdClear();
+      cmdClear().catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
       break;
     case "json":
       cmdJson();
@@ -259,11 +455,17 @@ if (command === "identity" || command === "id") {
       if (limitIdx !== -1 && args[limitIdx + 1]) {
         options.limit = parseInt(args[limitIdx + 1], 10);
       }
-      cmdContextList(options);
+      cmdContextList(options).catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
       break;
     }
     case "clear":
-      cmdContextClear();
+      cmdContextClear().catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
       break;
     case "import":
       cmdContextImport(args[2]).catch((e) => {

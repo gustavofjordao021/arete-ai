@@ -12,6 +12,7 @@
     "build:css": "npx tailwindcss -i ./popup.css -o ./popup.compiled.css --minify",
     "build:core": "npm run build -w @arete/core",
     "build:mcp": "npm run build -w @arete/mcp-server",
+    "preview:design": "vite --config vite.preview.config.js",
     "test": "vitest run --config vitest.extension.config.ts",
     "test:watch": "vitest --config vitest.extension.config.ts",
     "test:core": "npm test --workspace=@arete/core",
@@ -22,13 +23,35 @@
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.0.0-beta.27",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.22",
+    "happy-dom": "^20.0.11",
+    "jsdom": "^27.0.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "vite": "^5.4.11",
     "vitest": "^2.1.8"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.86.2"
+    "@radix-ui/react-avatar": "^1.1.11",
+    "@radix-ui/react-progress": "^1.1.8",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "@supabase/supabase-js": "^2.86.2",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.303.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.6.0"
   }
 }

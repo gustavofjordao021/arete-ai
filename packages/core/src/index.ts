@@ -71,7 +71,7 @@ export {
   type TransformResult,
 } from "./transforms/index.js";
 
-// Supabase integration
+// Supabase integration (Browser - OAuth)
 export {
   createAreteClient,
   getSupabaseConfig,
@@ -81,6 +81,18 @@ export {
   type ContextEvent as SupabaseContextEvent,
   type ContextEventInput,
   type ContextQueryOptions,
+} from "./supabase/index.js";
+
+// Supabase integration (CLI/MCP - API key)
+export {
+  createCLIClient,
+  loadConfig,
+  saveConfig,
+  clearConfig,
+  getSupabaseUrl,
+  type CLIClient,
+  type CLIClientOptions,
+  type CLIConfig,
 } from "./supabase/index.js";
 
 // Type alias for backwards compatibility

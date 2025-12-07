@@ -4,7 +4,22 @@
  */
 
 import { CLAUDE_API_KEY } from './src/keys.js';
-import { signInWithGoogle, signOut, getAuthState, initAuth, saveIdentity, loadIdentity, subscribeToIdentityChanges, unsubscribeAll } from './src/supabase';
+import {
+  signInWithGoogle,
+  signOut,
+  getAuthState,
+  initAuth,
+  saveIdentity,
+  loadIdentity,
+  subscribeToIdentityChanges,
+  unsubscribeAll,
+  syncPageVisit,
+  syncFact,
+  syncConversationMessage,
+  loadPagesFromCloud,
+  loadFactsFromCloud,
+  loadConversationFromCloud,
+} from './src/supabase';
 
 // Track realtime subscription
 let identityUnsubscribe = null;
@@ -217,6 +232,44 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'LOAD_IDENTITY_FROM_CLOUD') {
     loadIdentity()
       .then(identity => sendResponse({ success: true, identity }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  // Context sync handlers
+  if (request.type === 'SYNC_PAGE_VISIT') {
+    const { url, title, hostname } = request;
+    syncPageVisit(url, title, hostname)
+      .then(synced => sendResponse({ success: true, synced }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.type === 'SYNC_FACT') {
+    const { fact } = request;
+    syncFact(fact)
+      .then(saved => sendResponse({ success: true, saved }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.type === 'SYNC_CONVERSATION') {
+    const { role, content, metadata } = request;
+    syncConversationMessage(role, content, metadata || {})
+      .then(() => sendResponse({ success: true }))
+      .catch(error => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  if (request.type === 'LOAD_CONTEXT_FROM_CLOUD') {
+    Promise.all([
+      loadPagesFromCloud(),
+      loadFactsFromCloud(),
+      loadConversationFromCloud(),
+    ])
+      .then(([pages, facts, conversation]) => {
+        sendResponse({ success: true, pages, facts, conversation });
+      })
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true;
   }

@@ -67,6 +67,14 @@ Extract any new facts learned about the user:`;
           await memory.append('facts', 'learned', { fact: factText });
           await storePreference(factText);
           storedFacts.push(factText);
+
+          // Sync to cloud via background script
+          chrome.runtime.sendMessage({
+            type: 'SYNC_FACT',
+            fact: factText,
+          }).catch(() => {
+            // Ignore errors if background script not available
+          });
         }
       }
 

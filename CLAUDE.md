@@ -29,17 +29,19 @@ npm run build
 # Identity commands
 npm run cli identity get                     # Show current identity
 npm run cli identity set "I'm a PM at..."    # Store identity from prose
-npm run cli identity transform --model claude # Output Claude system prompt
-npm run cli identity transform --model openai # Output OpenAI system prompt
+npm run cli -- identity transform --model claude # Output Claude system prompt
+npm run cli -- identity transform --model openai # Output OpenAI system prompt
 npm run cli identity clear                   # Reset identity
 npm run cli identity json                    # Raw JSON output
 
 # Context commands
 npm run cli context list                     # Show recent context events
-npm run cli context list --type page_visit   # Filter by event type
-npm run cli context list --source chrome     # Filter by source
-npm run cli context list --limit 10          # Limit results
+npm run cli -- context list --type page_visit   # Filter by event type
+npm run cli -- context list --source chrome     # Filter by source
+npm run cli -- context list --limit 10          # Limit results
 npm run cli context clear                    # Clear all context
+
+# NOTE: Use -- before flags to pass them to the CLI (not npm)
 ```
 
 Data stored in `~/.arete/identity.json` and `~/.arete/context.json`
