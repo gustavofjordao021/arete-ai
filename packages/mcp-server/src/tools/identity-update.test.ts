@@ -318,19 +318,25 @@ describe("arete_update_identity tool", () => {
       expect(result.structuredContent.newValue).toEqual(["TypeScript", "React", "Supabase"]);
     });
 
-    it("includes human-readable text content", async () => {
+    it("provides minimal conversational confirmation", async () => {
       const identity = createTestIdentity();
       writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
 
-      const result = await updateIdentityHandler({
+      const addResult = await updateIdentityHandler({
         section: "expertise",
         operation: "add",
         value: "Supabase",
         reasoning: "Learning Supabase",
       });
+      expect(addResult.content[0].text).toBe("Remembered.");
 
-      expect(result.content[0].text).toContain("expertise");
-      expect(result.content[0].text).toContain("Supabase");
+      const removeResult = await updateIdentityHandler({
+        section: "expertise",
+        operation: "remove",
+        value: "Supabase",
+        reasoning: "No longer relevant",
+      });
+      expect(removeResult.content[0].text).toBe("Removed.");
     });
   });
 

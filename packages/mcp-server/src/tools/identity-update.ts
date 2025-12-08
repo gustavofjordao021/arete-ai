@@ -12,6 +12,10 @@ import {
   safeParseIdentity,
   createEmptyIdentity,
   type AreteIdentity,
+  type IdentityV2,
+  type IdentityFact,
+  type FactCategory,
+  createIdentityFact,
   loadConfig,
   createCLIClient,
   type CLIClient,
@@ -48,6 +52,15 @@ function isProtectedSection(section: string): boolean {
 }
 
 /**
+ * Check if identity is v2 format
+ */
+function isIdentityV2(data: unknown): data is IdentityV2 {
+  if (!data || typeof data !== "object") return false;
+  const obj = data as Record<string, unknown>;
+  return obj.version === "2.0.0" && Array.isArray(obj.facts);
+}
+
+/**
  * Get CLI client for cloud operations (if authenticated)
  */
 function getCloudClient(): CLIClient | null {
@@ -81,19 +94,36 @@ export interface UpdateToolResult {
   structuredContent: UpdateIdentityOutput;
 }
 
+type LoadedIdentity =
+  | { version: "v1"; identity: AreteIdentity }
+  | { version: "v2"; identity: IdentityV2 };
+
 /**
  * Load identity from file, creating empty one if needed
  */
-function loadIdentity(): AreteIdentity | null {
+function loadIdentity(): LoadedIdentity | null {
   const identityFile = getIdentityFile();
 
   if (!existsSync(identityFile)) {
-    return createEmptyIdentity("mcp-server");
+    return { version: "v1", identity: createEmptyIdentity("mcp-server") };
   }
 
   try {
     const data = readFileSync(identityFile, "utf-8");
-    return safeParseIdentity(JSON.parse(data));
+    const parsed = JSON.parse(data);
+
+    // Check if v2 format
+    if (isIdentityV2(parsed)) {
+      return { version: "v2", identity: parsed };
+    }
+
+    // Try v1 format
+    const v1 = safeParseIdentity(parsed);
+    if (v1) {
+      return { version: "v1", identity: v1 };
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -102,7 +132,7 @@ function loadIdentity(): AreteIdentity | null {
 /**
  * Save identity to file
  */
-function saveIdentity(identity: AreteIdentity): void {
+function saveIdentity(identity: AreteIdentity | IdentityV2): void {
   const identityFile = getIdentityFile();
   const dir = dirname(identityFile);
 
@@ -111,6 +141,98 @@ function saveIdentity(identity: AreteIdentity): void {
   }
 
   writeFileSync(identityFile, JSON.stringify(identity, null, 2));
+}
+
+/**
+ * Map v1 section names to v2 fact categories
+ * Valid categories: core, expertise, preference, context, focus
+ */
+function sectionToCategory(section: string, field?: string): FactCategory {
+  if (section === "expertise") return "expertise";
+  if (section === "context" && field === "personal") return "context";
+  if (section === "context" && field === "professional") return "expertise";
+  if (section === "currentFocus") return "focus";
+  if (section === "communication") return "preference";
+  // Default to context for custom/unknown
+  return "context";
+}
+
+/**
+ * Apply v2 operation - adds/removes facts
+ */
+function applyV2Operation(
+  identity: IdentityV2,
+  input: UpdateIdentityInput
+): { previousValue: unknown; newValue: unknown } {
+  const { section, operation, field, value } = input;
+  const category = sectionToCategory(section, field);
+  const content = String(value);
+
+  // Find existing fact with same content
+  const existingIndex = identity.facts.findIndex(
+    (f) => f.category === category && f.content.toLowerCase() === content.toLowerCase()
+  );
+
+  switch (operation) {
+    case "add": {
+      if (existingIndex >= 0) {
+        // Already exists, just return
+        return {
+          previousValue: identity.facts.map((f) => f.content),
+          newValue: identity.facts.map((f) => f.content),
+        };
+      }
+
+      // Create new fact using helper
+      const newFact = createIdentityFact({
+        category,
+        content,
+        source: "manual",
+        confidence: 0.8,
+      });
+
+      const previousContents = identity.facts.filter((f) => f.category === category).map((f) => f.content);
+      identity.facts.push(newFact);
+      const newContents = identity.facts.filter((f) => f.category === category).map((f) => f.content);
+
+      return { previousValue: previousContents, newValue: newContents };
+    }
+
+    case "remove": {
+      if (existingIndex < 0) {
+        // Doesn't exist
+        return {
+          previousValue: identity.facts.map((f) => f.content),
+          newValue: identity.facts.map((f) => f.content),
+        };
+      }
+
+      const previousContents = identity.facts.filter((f) => f.category === category).map((f) => f.content);
+      identity.facts.splice(existingIndex, 1);
+      const newContents = identity.facts.filter((f) => f.category === category).map((f) => f.content);
+
+      return { previousValue: previousContents, newValue: newContents };
+    }
+
+    case "set": {
+      // For set, remove all facts of this category and add new one
+      const previousContents = identity.facts.filter((f) => f.category === category).map((f) => f.content);
+      identity.facts = identity.facts.filter((f) => f.category !== category);
+
+      const newFact = createIdentityFact({
+        category,
+        content,
+        source: "manual",
+        confidence: 0.8,
+      });
+      identity.facts.push(newFact);
+
+      return { previousValue: previousContents, newValue: [content] };
+    }
+
+    default:
+      return { previousValue: [], newValue: [] };
+  }
 }
 
 /**
@@ -253,8 +375,8 @@ export async function updateIdentityHandler(
   }
 
   // Load identity
-  const identity = loadIdentity();
-  if (!identity) {
+  const loaded = loadIdentity();
+  if (!loaded) {
     const output: UpdateIdentityOutput = {
       success: false,
       error: "Failed to load identity file (may be corrupt)",
@@ -265,45 +387,64 @@ export async function updateIdentityHandler(
     };
   }
 
-  // Apply the operation
-  const { previousValue, newValue } = applyOperation(identity, input);
+  let previousValue: unknown;
+  let newValue: unknown;
 
-  // Update lastModified
-  identity.meta.lastModified = new Date().toISOString();
+  if (loaded.version === "v2") {
+    // V2 identity: add/remove facts
+    const result = applyV2Operation(loaded.identity, input);
+    previousValue = result.previousValue;
+    newValue = result.newValue;
 
-  // Save locally
-  try {
-    saveIdentity(identity);
-  } catch (err) {
-    const output: UpdateIdentityOutput = {
-      success: false,
-      error: `Failed to save identity: ${err instanceof Error ? err.message : "Unknown error"}`,
-    };
-    return {
-      content: [{ type: "text", text: `Error: ${output.error}` }],
-      structuredContent: output,
-    };
-  }
-
-  // Sync to cloud if authenticated (best effort)
-  const client = getCloudClient();
-  if (client) {
+    // Save locally
     try {
-      await client.saveIdentity(identity);
+      saveIdentity(loaded.identity);
     } catch (err) {
-      // Log but don't fail - local save succeeded
-      console.error("Cloud sync failed:", err);
+      const output: UpdateIdentityOutput = {
+        success: false,
+        error: `Failed to save identity: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+      return {
+        content: [{ type: "text", text: `Error: ${output.error}` }],
+        structuredContent: output,
+      };
+    }
+
+    // Cloud sync for v2 not implemented yet
+  } else {
+    // V1 identity: use legacy operation
+    const result = applyOperation(loaded.identity, input);
+    previousValue = result.previousValue;
+    newValue = result.newValue;
+
+    // Update lastModified
+    loaded.identity.meta.lastModified = new Date().toISOString();
+
+    // Save locally
+    try {
+      saveIdentity(loaded.identity);
+    } catch (err) {
+      const output: UpdateIdentityOutput = {
+        success: false,
+        error: `Failed to save identity: ${err instanceof Error ? err.message : "Unknown error"}`,
+      };
+      return {
+        content: [{ type: "text", text: `Error: ${output.error}` }],
+        structuredContent: output,
+      };
+    }
+
+    // Sync to cloud if authenticated (best effort)
+    const client = getCloudClient();
+    if (client) {
+      try {
+        await client.saveIdentity(loaded.identity);
+      } catch (err) {
+        // Log but don't fail - local save succeeded
+        console.error("Cloud sync failed:", err);
+      }
     }
   }
-
-  // Format success message
-  const fieldPath = field ? `${section}.${field}` : section;
-  const operationDesc =
-    operation === "add"
-      ? `Added "${value}" to`
-      : operation === "remove"
-        ? `Removed "${value}" from`
-        : `Set`;
 
   const output: UpdateIdentityOutput = {
     success: true,
@@ -311,7 +452,8 @@ export async function updateIdentityHandler(
     newValue,
   };
 
-  const text = `${operationDesc} ${fieldPath}\nReason: ${reasoning}`;
+  // Minimal, conversational output
+  const text = operation === "remove" ? "Removed." : "Remembered.";
 
   return {
     content: [{ type: "text", text }],

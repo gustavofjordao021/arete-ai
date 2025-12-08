@@ -5,7 +5,7 @@
  * Platform-agnostic - can be used in browser, Node, or Raycast.
  */
 
-// Schema - Identity
+// Schema - Identity (v1)
 export {
   AreteIdentitySchema,
   ProjectSchema,
@@ -16,6 +16,31 @@ export {
   type AreteIdentity,
   type Project,
   type Source,
+} from "./schema/index.js";
+
+// Schema - Identity v2 (facts with confidence + maturity)
+export {
+  IdentityFactSchema,
+  IdentityV2Schema,
+  IdentitySettingsSchema,
+  IdentityCoreSchema,
+  FactCategorySchema,
+  MaturitySchema,
+  FactSourceSchema,
+  createIdentityFact,
+  createEmptyIdentityV2,
+  migrateV1ToV2,
+  getEffectiveConfidence,
+  validateFact,
+  isIdentityV2,
+  DEFAULT_HALF_LIFE_DAYS,
+  type IdentityFact,
+  type IdentityV2,
+  type IdentitySettings,
+  type IdentityCore,
+  type FactCategory,
+  type Maturity,
+  type FactSource,
 } from "./schema/index.js";
 
 // Schema - Context

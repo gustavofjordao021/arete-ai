@@ -14,6 +14,31 @@ export {
 // Type alias for convenience
 export type { AreteIdentity as Identity } from "./identity.js";
 
+// Identity v2 schema (facts with confidence + maturity)
+export {
+  IdentityFactSchema,
+  IdentityV2Schema,
+  IdentitySettingsSchema,
+  IdentityCoreSchema,
+  FactCategorySchema,
+  MaturitySchema,
+  FactSourceSchema,
+  createIdentityFact,
+  createEmptyIdentityV2,
+  migrateV1ToV2,
+  getEffectiveConfidence,
+  validateFact,
+  isIdentityV2,
+  DEFAULT_HALF_LIFE_DAYS,
+  type IdentityFact,
+  type IdentityV2,
+  type IdentitySettings,
+  type IdentityCore,
+  type FactCategory,
+  type Maturity,
+  type FactSource,
+} from "./identity-v2.js";
+
 // Context schema
 export {
   ContextEventSchema,

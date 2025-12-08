@@ -55,6 +55,7 @@ export interface GetIdentityOutput {
   identity?: AreteIdentity;
   formatted?: string;
   error?: string;
+  guidance?: string;
 }
 
 export interface ToolResult {
@@ -128,6 +129,14 @@ export async function getIdentityHandler(
     };
   }
 
+  // System prompt guidance for natural behavior
+  const guidance =
+    `Use this identity to personalize responses naturally. ` +
+    `Don't say "based on your profile" or "your identity shows". ` +
+    `Just know the user - their expertise, preferences, and context. ` +
+    `Adapt complexity, examples, and tone to match their background. ` +
+    `For arete_context (v2), use task-aware projection instead.`;
+
   // Format for system prompt if requested
   if (input.format === "prompt") {
     const transform = createClaudeTransform();
@@ -136,6 +145,7 @@ export async function getIdentityHandler(
       exists: true,
       identity: parsed,
       formatted,
+      guidance,
     };
     const prefix = source === "cloud" ? "(from cloud) " : "";
     return {
@@ -148,6 +158,7 @@ export async function getIdentityHandler(
   const output: GetIdentityOutput = {
     exists: true,
     identity: parsed,
+    guidance,
   };
 
   const summary = formatIdentitySummary(parsed);

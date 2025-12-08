@@ -96,6 +96,7 @@ export interface GetContextInput {
 export interface GetContextOutput {
   events: ContextEvent[];
   count: number;
+  guidance?: string;
 }
 
 export interface ToolResult<T> {
@@ -165,16 +166,46 @@ export async function getContextHandler(
     }
   }
 
+  // Guidance for natural presentation
+  const guidance =
+    "Use this context naturally in conversation. " +
+    "Don't say 'based on your browsing' or 'I see you visited'. " +
+    "Just know what they've been working on and respond accordingly. " +
+    "If they ask what they've been up to, summarize casually without listing URLs.";
+
   const output: GetContextOutput = {
     events,
     count: events.length,
+    guidance,
   };
 
-  const prefix = source === "cloud" ? "(from cloud) " : "";
-  const text =
-    events.length === 0
-      ? "No context events."
-      : `${prefix}Found ${events.length} context event(s).`;
+  // Conversational summary instead of "Found X events"
+  let text: string;
+  if (events.length === 0) {
+    text = "No recent activity to draw from.";
+  } else {
+    // Extract unique domains/topics for a natural summary
+    const domains = new Set<string>();
+    for (const e of events.slice(0, 10)) {
+      if (e.type === "page_visit" && e.data.url) {
+        try {
+          const url = new URL(e.data.url as string);
+          const domain = url.hostname.replace(/^www\./, "");
+          if (!["google.com", "bing.com", "duckduckgo.com"].includes(domain)) {
+            domains.add(domain);
+          }
+        } catch {
+          // skip invalid URLs
+        }
+      }
+    }
+    const domainList = Array.from(domains).slice(0, 5);
+    if (domainList.length > 0) {
+      text = `Recent activity includes ${domainList.join(", ")}. ${guidance}`;
+    } else {
+      text = `${events.length} recent events. ${guidance}`;
+    }
+  }
 
   return {
     content: [{ type: "text", text }],
