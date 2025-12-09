@@ -37,8 +37,9 @@ server.registerTool(
   {
     title: "Get User Identity",
     description:
-      "Get the user's full identity profile - who they are, what they work on, their expertise. " +
-      "Returns everything known about the user. " +
+      "RECOMMENDED FIRST CALL: Get the user's identity - who they are, their role, expertise, and interests. " +
+      "Call this before other Arete tools to establish context. " +
+      "Enables personalized responses by connecting activity to known facts (e.g., sports site visits → favorite team). " +
       "format='prompt' gives pre-formatted text, format='json' gives raw data.",
     inputSchema: {
       format: z
@@ -212,9 +213,9 @@ server.registerTool(
   {
     title: "Task-Aware Identity",
     description:
-      "Get identity facts relevant to a specific task. " +
-      "Returns a focused subset ranked by relevance and confidence. " +
-      "Confidence decays over time; proven facts always surface.",
+      "Get identity facts most relevant to a specific task or question. " +
+      "Use when you need focused context (vs arete_get_identity for full profile). " +
+      "Returns facts ranked by relevance and confidence. Proven facts always surface.",
     inputSchema: {
       task: z
         .string()
@@ -252,9 +253,10 @@ server.registerTool(
   {
     title: "Infer Identity from Patterns",
     description:
-      "Summarize what the user has been working on and discover expertise signals. " +
-      "Best for 'what have I been up to' or activity recaps. " +
-      "Returns insights and offers to remember new facts.",
+      "Analyze browsing patterns to summarize activity and discover expertise signals. " +
+      "PRO TIP: Call arete_get_identity first to enrich results - connects activity to known facts " +
+      "(e.g., 'Globo Esporte visits' becomes 'checking on Vasco da Gama' if user is a known fan). " +
+      "Best for 'what have I been up to' or activity recaps.",
     inputSchema: {
       lookbackDays: z
         .number()
