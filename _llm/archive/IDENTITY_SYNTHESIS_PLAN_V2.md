@@ -1,7 +1,7 @@
 # Identity Synthesis Plan (v2)
 
 > Created: 2025-12-08
-> Status: ✅ Complete (Phases 1-5)
+> Status: ✅ Complete (Phases 1-6)
 > Depends on: [ARETE_V2_ARCHITECTURE.md](./ARETE_V2_ARCHITECTURE.md), [CONTEXT_ROLLUP_PLAN_V2.md](./CONTEXT_ROLLUP_PLAN_V2.md)
 > Replaces: [IDENTITY_SYNTHESIS_PLAN_V1.md](../archive/IDENTITY_SYNTHESIS_PLAN_V1.md)
 > Completed: 2025-12-08
@@ -483,14 +483,14 @@ blocked_inferences       -- Facts user rejected
 - [x] **BONUS:** Orchestration guidance (Agent Skills pattern)
 - [ ] Connect to `candidate_facts` table (cloud) — deferred to Context Rollup
 
-### Phase 6: Archive + Cleanup (deferred)
-- [ ] Implement fact archival (confidence < 0.1)
-- [ ] Create `~/.arete/archive/` structure
-- [ ] Periodic cleanup function
-- [ ] CLI command: `arete identity archive`
+### Phase 6: Archive + Cleanup ✅
+- [x] Implement fact archival (confidence < 0.1)
+- [x] Create `~/.arete/archive/` structure
+- [x] Periodic cleanup function (`runArchiveCleanup()`)
+- [x] CLI command: `arete identity archive`
+- [x] 11 tests for archive functionality
 
-**Completed: Phases 1-5 (~12 hours)**
-**Deferred: Phase 6 (nice-to-have)**
+**Completed: Phases 1-6**
 
 ---
 
@@ -694,7 +694,7 @@ They meet at `candidate_facts` - rollup creates them, synthesis validates them.
 - Haiku integration for smart domain categorization (unknown sites)
 - Orchestration guidance (Agent Skills pattern) for Claude Desktop
 
-**Test Coverage:** 116 tests passing
+**Test Coverage:** 127 tests passing (116 MCP + 11 archive)
 
 ### Demo Results
 
@@ -708,6 +708,7 @@ Claude Desktop successfully:
 
 ### Key Commits
 ```
+eeef19b feat: add fact archival system (Phase 6)
 373be8d feat: add orchestration guidance to MCP tool descriptions
 e7bcda9 feat: add Haiku integration for smart domain categorization
 df6c145 feat: identity v2 with fact-based architecture
