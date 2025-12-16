@@ -20,6 +20,7 @@ import { similarity } from "./fuzzy-match.js";
 
 // Supabase Edge Function for Haiku classification
 const SUPABASE_URL = "https://dvjgxddjmevmmtzqmzrm.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR2amd4ZGRqbWV2bW10enFtenJtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwMzQ1MjAsImV4cCI6MjA4MDYxMDUyMH0.DxLL_lftNcuE1ROQigLc9xWdPiJZVVpPT2e6ZBPeyaE";
 const CLASSIFY_ENDPOINT = `${SUPABASE_URL}/functions/v1/classify-insight`;
 
 // Configurable directory (for testing)
@@ -241,6 +242,7 @@ async function classifyWithHaiku(insight: string): Promise<PromotionResult | nul
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
       },
       body: JSON.stringify({ insight }),
       signal: controller.signal,

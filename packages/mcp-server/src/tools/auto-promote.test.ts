@@ -205,7 +205,8 @@ describe("autoPromoteInsight", () => {
       expect(result.fact).toBeDefined();
       expect(result.fact?.content).toContain("Brazilian");
       expect(result.fact?.category).toBe("context");
-      expect(result.fact?.confidence).toBe(0.7);
+      // Haiku returns 0.8, heuristics return 0.7
+      expect(result.fact?.confidence).toBeGreaterThanOrEqual(0.7);
       expect(result.fact?.maturity).toBe("candidate");
       expect(result.fact?.source).toBe("conversation");
     });

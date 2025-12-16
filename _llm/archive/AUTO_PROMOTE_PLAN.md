@@ -1,7 +1,7 @@
 # Automatic Context-to-Identity Promotion Plan
 
 > Created: 2025-12-15
-> Status: In Progress
+> Status: ✅ Complete
 > Origin: Discussion about making Arete feel like ChatGPT/Claude memory
 
 ## Problem
@@ -240,16 +240,26 @@ Settings:
 - [x] Integrate with `addContextEventHandler`
 - [x] Deploy Edge Function via Supabase MCP
 - [x] Add `autoPromote` setting to schema
-- [ ] Set `ANTHROPIC_API_KEY` secret in Supabase (for Haiku)
-- [ ] Manual test in Claude Desktop
+- [x] Set `ANTHROPIC_API_KEY` secret in Supabase (for Haiku)
+- [x] Manual test in Claude Desktop
 
-## Remaining Setup
+## Completion Notes
 
-The Edge Function needs the Anthropic API key to call Haiku:
+**Completed: 2025-12-16**
 
-```bash
-# Via Supabase Dashboard: Settings → Edge Functions → Secrets
-# Add: ANTHROPIC_API_KEY = <your-key>
+The auto-promote feature is now live:
+- Haiku classification via Edge Function `classify-insight` (v3)
+- Handles both first-person ("I prefer X") and third-person ("Prefers X") insights
+- Falls back to heuristics if Edge Function unavailable
+- New facts appear with `source: "conversation"` and `maturity: "candidate"`
+
+Example auto-promoted fact:
+```json
+{
+  "category": "context",
+  "content": "Portuguese citizen planning to relocate to Portugal to start a business",
+  "confidence": 0.85,
+  "maturity": "candidate",
+  "source": "conversation"
+}
 ```
-
-Without this secret, the function will return 401 and fall back to heuristics.
