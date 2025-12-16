@@ -34,7 +34,7 @@ export class ClaudeTransform extends BaseTransform {
     }
 
     // Expertise
-    if (this.includeSection("expertise", options) && identity.expertise.length > 0) {
+    if (this.includeSection("expertise", options) && identity.expertise?.length > 0) {
       sections.push(`<user_expertise>\n${this.formatList(identity.expertise)}\n</user_expertise>`);
       includedSections.push("expertise");
     }
@@ -80,21 +80,22 @@ export class ClaudeTransform extends BaseTransform {
 
   private formatCommunication(identity: AreteIdentity): string {
     const sections: string[] = [];
-    const { communication } = identity;
+    const communication = identity.communication;
+    if (!communication) return "";
 
     if (communication.voice) {
       sections.push(`Voice: ${communication.voice}`);
     }
 
-    if (communication.style.length > 0) {
+    if (communication.style?.length > 0) {
       sections.push(`Style preferences:\n${this.formatList(communication.style)}`);
     }
 
-    if (communication.format.length > 0) {
+    if (communication.format?.length > 0) {
       sections.push(`Format preferences:\n${this.formatList(communication.format)}`);
     }
 
-    if (communication.avoid.length > 0) {
+    if (communication.avoid?.length > 0) {
       sections.push(`Avoid:\n${this.formatList(communication.avoid)}`);
     }
 
@@ -103,16 +104,17 @@ export class ClaudeTransform extends BaseTransform {
 
   private formatFocus(identity: AreteIdentity): string {
     const sections: string[] = [];
-    const { currentFocus } = identity;
+    const currentFocus = identity.currentFocus;
+    if (!currentFocus) return "";
 
-    if (currentFocus.projects.length > 0) {
+    if (currentFocus.projects?.length > 0) {
       const projectLines = currentFocus.projects.map(p =>
         `- ${p.name}${p.status !== "active" ? ` (${p.status})` : ""}: ${p.description}`
       );
       sections.push(`Current projects:\n${projectLines.join("\n")}`);
     }
 
-    if (currentFocus.goals.length > 0) {
+    if (currentFocus.goals?.length > 0) {
       sections.push(`Goals:\n${this.formatList(currentFocus.goals)}`);
     }
 
@@ -121,13 +123,14 @@ export class ClaudeTransform extends BaseTransform {
 
   private formatContext(identity: AreteIdentity): string {
     const sections: string[] = [];
-    const { context } = identity;
+    const context = identity.context;
+    if (!context) return "";
 
-    if (context.professional.length > 0) {
+    if (context.professional?.length > 0) {
       sections.push(`Professional context:\n${this.formatList(context.professional)}`);
     }
 
-    if (context.personal.length > 0) {
+    if (context.personal?.length > 0) {
       sections.push(`Personal context:\n${this.formatList(context.personal)}`);
     }
 

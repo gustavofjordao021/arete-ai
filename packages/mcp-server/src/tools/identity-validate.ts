@@ -15,6 +15,7 @@ import {
   type IdentityFact,
   type CLIClient,
 } from "@arete/core";
+import { findBestMatch } from "./fuzzy-match.js";
 
 /**
  * Local v2 identity check (avoids mocking issues in tests)
@@ -85,7 +86,8 @@ function getCloudClient(): CLIClient | null {
 
 export interface ValidateFactInput {
   factId?: string;
-  content?: string; // Fallback to content match
+  content?: string; // Fallback to content match (supports fuzzy matching)
+  fuzzyThreshold?: number; // Similarity threshold for fuzzy matching (0-1, default: 0.7)
   reasoning: string;
 }
 
@@ -93,6 +95,7 @@ export interface ValidateFactOutput {
   success: boolean;
   previousFact?: IdentityFact;
   updatedFact?: IdentityFact;
+  matchScore?: number; // How well the content matched (1.0 = exact, < 1.0 = fuzzy)
   error?: string;
 }
 
@@ -139,23 +142,43 @@ function saveIdentityV2(identity: IdentityV2): void {
   writeFileSync(identityFile, JSON.stringify(identity, null, 2));
 }
 
+interface FactMatch {
+  fact: IdentityFact;
+  score: number; // 1.0 = exact, < 1.0 = fuzzy
+}
+
 /**
- * Find fact by ID or content
+ * Find fact by ID or content (with fuzzy matching support)
  */
 function findFact(
   facts: IdentityFact[],
   factId?: string,
-  content?: string
-): IdentityFact | undefined {
+  content?: string,
+  fuzzyThreshold: number = 0.7
+): FactMatch | undefined {
   // First try to find by ID
   if (factId) {
     const byId = facts.find((f) => f.id === factId);
-    if (byId) return byId;
+    if (byId) return { fact: byId, score: 1.0 };
   }
 
-  // Fallback to content match
+  // Try exact content match first
   if (content) {
-    return facts.find((f) => f.content === content);
+    const exactMatch = facts.find(
+      (f) => f.content.toLowerCase().trim() === content.toLowerCase().trim()
+    );
+    if (exactMatch) return { fact: exactMatch, score: 1.0 };
+
+    // Fall back to fuzzy matching
+    const fuzzyMatch = findBestMatch(
+      content,
+      facts,
+      (f) => f.content,
+      fuzzyThreshold
+    );
+    if (fuzzyMatch) {
+      return { fact: fuzzyMatch.item, score: fuzzyMatch.score };
+    }
   }
 
   return undefined;
@@ -167,7 +190,7 @@ function findFact(
 export async function validateFactHandler(
   input: ValidateFactInput
 ): Promise<ValidateToolResult> {
-  const { factId, content, reasoning } = input;
+  const { factId, content, fuzzyThreshold = 0.7, reasoning } = input;
 
   // Load identity
   const identity = loadIdentityV2();
@@ -204,10 +227,10 @@ export async function validateFactHandler(
     };
   }
 
-  // Find the fact
-  const fact = findFact(identity.facts, factId, content);
+  // Find the fact (with fuzzy matching)
+  const match = findFact(identity.facts, factId, content, fuzzyThreshold);
 
-  if (!fact) {
+  if (!match) {
     const searchTerm = factId || content || "unknown";
     const output: ValidateFactOutput = {
       success: false,
@@ -218,6 +241,8 @@ export async function validateFactHandler(
       structuredContent: output,
     };
   }
+
+  const { fact, score: matchScore } = match;
 
   // Store previous state for response
   const previousFact = { ...fact };
@@ -263,13 +288,20 @@ export async function validateFactHandler(
       ? ` (promoted to ${updatedFact.maturity})`
       : "";
 
+  // Note if this was a fuzzy match
+  const fuzzyNote =
+    matchScore < 1.0
+      ? ` (fuzzy match: ${Math.round(matchScore * 100)}% similar)`
+      : "";
+
   const output: ValidateFactOutput = {
     success: true,
     previousFact,
     updatedFact,
+    matchScore,
   };
 
-  const text = `Fact validated: "${fact.content}"${maturityChange}
+  const text = `Fact validated: "${fact.content}"${maturityChange}${fuzzyNote}
 Confidence: ${previousFact.confidence.toFixed(2)} → ${updatedFact.confidence.toFixed(2)}
 Validations: ${previousFact.validationCount} → ${updatedFact.validationCount}
 Reason: ${reasoning}`;
@@ -290,6 +322,9 @@ export const validateFactTool = {
 Use this tool when you've confirmed that a fact about the user is accurate.
 Facts progress through maturity levels: candidate → established → proven.
 
+FUZZY MATCHING: Don't worry about exact wording - "works at PayNearMe" will match
+"PayNearMe employee". Default threshold is 70% similarity.
+
 Examples:
 - User confirms they know TypeScript → validate the TypeScript expertise fact
 - User demonstrates a preference → validate the preference fact
@@ -303,7 +338,7 @@ Each validation:
 
 You can find a fact by:
 1. factId - exact UUID of the fact
-2. content - exact content string to match`,
+2. content - fuzzy matched content string (70%+ similarity by default)`,
   inputSchema: {
     type: "object",
     properties: {
@@ -314,7 +349,12 @@ You can find a fact by:
       content: {
         type: "string",
         description:
-          "Exact content of the fact to validate (used if factId not found or not provided)",
+          "Content to match against facts (supports fuzzy matching - doesn't need to be exact)",
+      },
+      fuzzyThreshold: {
+        type: "number",
+        description:
+          "Similarity threshold for fuzzy matching 0-1 (default: 0.7). Lower = more lenient.",
       },
       reasoning: {
         type: "string",

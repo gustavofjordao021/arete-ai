@@ -43,6 +43,8 @@ function createTestIdentity(facts: Partial<IdentityFact>[]): IdentityV2 {
       decayHalfLifeDays: 60,
       autoInfer: false,
       excludedDomains: [],
+      autoPromote: true,
+      useHaikuClassification: true,
     },
   };
 }

@@ -366,7 +366,7 @@ describe("arete_infer tool", () => {
   });
 
   describe("domain categorization (general, not tech-only)", () => {
-    it("categorizes health sites as 'interest' not 'development'", () => {
+    it("categorizes health sites as 'focus' not 'development'", () => {
       const events = [
         createContextEvent("page_visit", { url: "https://ro.co/health", title: "Ro Health" }),
         createContextEvent("page_visit", { url: "https://ro.co/weight-loss", title: "Weight Loss" }),
@@ -378,10 +378,10 @@ describe("arete_infer tool", () => {
       const roCandidate = candidates.find(c => c.sourceRef === "ro.co");
       expect(roCandidate).toBeDefined();
       expect(roCandidate?.content).not.toContain("development");
-      expect(roCandidate?.category).toBe("interest");
+      expect(roCandidate?.category).toBe("focus");
     });
 
-    it("categorizes sports/news sites as 'interest' not 'development'", () => {
+    it("categorizes sports/news sites as 'focus' not 'development'", () => {
       const events = [
         createContextEvent("page_visit", { url: "https://ge.globo.com/futebol", title: "Futebol" }),
         createContextEvent("page_visit", { url: "https://ge.globo.com/basquete", title: "Basquete" }),
@@ -393,7 +393,7 @@ describe("arete_infer tool", () => {
       const globoCandidate = candidates.find(c => c.sourceRef?.includes("globo"));
       expect(globoCandidate).toBeDefined();
       expect(globoCandidate?.content).not.toContain("development");
-      expect(globoCandidate?.category).toBe("interest");
+      expect(globoCandidate?.category).toBe("focus");
     });
 
     it("categorizes tech documentation as 'expertise' with 'development'", () => {
@@ -411,7 +411,7 @@ describe("arete_infer tool", () => {
       expect(reactCandidate?.category).toBe("expertise");
     });
 
-    it("categorizes shopping sites as 'interest'", () => {
+    it("categorizes shopping sites as 'focus'", () => {
       const events = [
         createContextEvent("page_visit", { url: "https://amazon.com/dp/123", title: "Product 1" }),
         createContextEvent("page_visit", { url: "https://amazon.com/dp/456", title: "Product 2" }),
@@ -420,7 +420,7 @@ describe("arete_infer tool", () => {
 
       const candidates = analyzeContextForPatterns(events);
 
-      // Amazon might be in ignored list, but if it produces a candidate, it should be interest
+      // Amazon might be in ignored list, but if it produces a candidate, it should be focus
       const amazonCandidate = candidates.find(c => c.sourceRef === "amazon.com");
       if (amazonCandidate) {
         expect(amazonCandidate.content).not.toContain("development");
@@ -439,7 +439,7 @@ describe("arete_infer tool", () => {
       const espnCandidate = candidates.find(c => c.sourceRef === "espn.com");
       expect(espnCandidate).toBeDefined();
       expect(espnCandidate?.content.toLowerCase()).toContain("sports");
-      expect(espnCandidate?.category).toBe("interest");
+      expect(espnCandidate?.category).toBe("focus");
     });
   });
 
@@ -599,6 +599,231 @@ describe("arete_infer tool", () => {
       if (fewRust && manyRust) {
         expect(manyRust.confidence).toBeGreaterThanOrEqual(fewRust.confidence);
       }
+    });
+  });
+
+  describe("cross-type inference (Phase 4)", () => {
+    it("processes insight events in addition to page_visit", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          content: [{ text: JSON.stringify({
+            candidates: [
+              { content: "health and fitness optimization", category: "focus", confidence: 0.75, signals: ["ro.com visits", "health insights"], reasoning: "Cross-type pattern" }
+            ],
+            reinforce: [],
+            downgrade: []
+          })}]
+        })
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+
+      const events = [
+        createContextEvent("page_visit", { url: "https://ro.com/products", title: "Ro Products" }),
+        createContextEvent("page_visit", { url: "https://ro.com/products", title: "Ro Products" }),
+        createContextEvent("page_visit", { url: "https://ro.com/products", title: "Ro Products" }),
+        createContextEvent("insight", { insight: "User interested in health optimization" }),
+        createContextEvent("insight", { insight: "User tracks fitness metrics" }),
+      ];
+      writeFileSync(join(TEST_DIR, "context.json"), JSON.stringify(events));
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(createTestIdentityV2()));
+
+      const result = await inferHandler({});
+
+      // Haiku should be called for cross-type analysis
+      expect(mockFetch).toHaveBeenCalled();
+      expect(result.structuredContent.success).toBe(true);
+
+      process.env.ANTHROPIC_API_KEY = originalEnv;
+      vi.unstubAllGlobals();
+    });
+
+    it("processes conversation events", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          content: [{ text: JSON.stringify({
+            candidates: [
+              { content: "TypeScript development", category: "expertise", confidence: 0.8, signals: ["TS conversations"], reasoning: "Multiple conversations about TS" }
+            ],
+            reinforce: [],
+            downgrade: []
+          })}]
+        })
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+
+      const events = [
+        createContextEvent("conversation", { summary: "Discussed TypeScript migration" }),
+        createContextEvent("conversation", { summary: "Talked about type safety best practices" }),
+        createContextEvent("file", { path: "src/api.ts" }),
+      ];
+      writeFileSync(join(TEST_DIR, "context.json"), JSON.stringify(events));
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(createTestIdentityV2()));
+
+      const result = await inferHandler({});
+
+      expect(result.structuredContent.success).toBe(true);
+
+      process.env.ANTHROPIC_API_KEY = originalEnv;
+      vi.unstubAllGlobals();
+    });
+
+    it("includes reinforce suggestions in output", async () => {
+      const existingFact = {
+        id: "ts-fact-123",
+        category: "expertise",
+        content: "TypeScript development",
+        confidence: 0.7,
+        lastValidated: new Date().toISOString(),
+        validationCount: 1,
+        maturity: "emerging",
+        source: "manual",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          content: [{ text: JSON.stringify({
+            candidates: [],
+            reinforce: [
+              { factId: "ts-fact-123", reason: "Recent TypeScript file activity supports this expertise" }
+            ],
+            downgrade: []
+          })}]
+        })
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+
+      const events = [
+        createContextEvent("file", { path: "src/api.ts" }),
+        createContextEvent("file", { path: "src/types.ts" }),
+      ];
+      writeFileSync(join(TEST_DIR, "context.json"), JSON.stringify(events));
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(createTestIdentityV2([existingFact])));
+
+      const result = await inferHandler({});
+
+      expect(result.structuredContent.reinforce).toBeDefined();
+      expect(result.structuredContent.reinforce).toHaveLength(1);
+      expect(result.structuredContent.reinforce[0].factId).toBe("ts-fact-123");
+
+      process.env.ANTHROPIC_API_KEY = originalEnv;
+      vi.unstubAllGlobals();
+    });
+
+    it("includes downgrade suggestions for stale facts", async () => {
+      const staleFact = {
+        id: "python-fact-456",
+        category: "expertise",
+        content: "Python development",
+        confidence: 0.6,
+        lastValidated: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 days ago
+        validationCount: 1,
+        maturity: "emerging",
+        source: "inferred",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          content: [{ text: JSON.stringify({
+            candidates: [],
+            reinforce: [],
+            downgrade: [
+              { factId: "python-fact-456", reason: "No recent Python activity detected" }
+            ]
+          })}]
+        })
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+
+      const events = [
+        createContextEvent("page_visit", { url: "https://react.dev", title: "React" }),
+        createContextEvent("page_visit", { url: "https://react.dev", title: "React" }),
+        createContextEvent("page_visit", { url: "https://react.dev", title: "React" }),
+      ];
+      writeFileSync(join(TEST_DIR, "context.json"), JSON.stringify(events));
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(createTestIdentityV2([staleFact])));
+
+      const result = await inferHandler({});
+
+      expect(result.structuredContent.downgrade).toBeDefined();
+      expect(result.structuredContent.downgrade).toHaveLength(1);
+      expect(result.structuredContent.downgrade[0].factId).toBe("python-fact-456");
+
+      process.env.ANTHROPIC_API_KEY = originalEnv;
+      vi.unstubAllGlobals();
+    });
+
+    it("falls back to domain-only analysis without API key", async () => {
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+      delete process.env.ANTHROPIC_API_KEY;
+
+      const events = [
+        createContextEvent("page_visit", { url: "https://react.dev", title: "React" }),
+        createContextEvent("page_visit", { url: "https://react.dev", title: "React" }),
+        createContextEvent("page_visit", { url: "https://react.dev", title: "React" }),
+        createContextEvent("insight", { insight: "User interested in React" }),
+      ];
+      writeFileSync(join(TEST_DIR, "context.json"), JSON.stringify(events));
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(createTestIdentityV2()));
+
+      const result = await inferHandler({});
+
+      // Should work without cross-type Haiku analysis
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.source).toBe("local_context");
+
+      process.env.ANTHROPIC_API_KEY = originalEnv;
+    });
+
+    it("handles selection events", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          content: [{ text: JSON.stringify({
+            candidates: [
+              { content: "data visualization", category: "focus", confidence: 0.7, signals: ["D3.js selection"], reasoning: "Selection suggests focus" }
+            ],
+            reinforce: [],
+            downgrade: []
+          })}]
+        })
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const originalEnv = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = "sk-ant-test-key";
+
+      const events = [
+        createContextEvent("selection", { text: "D3.js provides powerful data visualization capabilities" }),
+      ];
+      writeFileSync(join(TEST_DIR, "context.json"), JSON.stringify(events));
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(createTestIdentityV2()));
+
+      const result = await inferHandler({});
+
+      expect(result.structuredContent.success).toBe(true);
+
+      process.env.ANTHROPIC_API_KEY = originalEnv;
+      vi.unstubAllGlobals();
     });
   });
 });

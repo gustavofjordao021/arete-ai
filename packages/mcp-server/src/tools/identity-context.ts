@@ -63,9 +63,38 @@ function getEffectiveConfidenceLocal(
 }
 
 /**
- * Load identity v2 from file
+ * Get CLI client for cloud operations (if authenticated)
  */
-function loadIdentityV2(): IdentityV2 | null {
+function getCloudClient(): CLIClient | null {
+  const config = loadConfig();
+  if (!config || !config.apiKey || !config.supabaseUrl) {
+    return null;
+  }
+  return createCLIClient({
+    supabaseUrl: config.supabaseUrl,
+    apiKey: config.apiKey,
+  });
+}
+
+/**
+ * Load identity v2 - tries cloud first, falls back to local
+ */
+async function loadIdentityV2Async(): Promise<IdentityV2 | null> {
+  // Try cloud first if authenticated
+  const client = getCloudClient();
+  if (client) {
+    try {
+      const cloudIdentity = await client.getIdentity();
+      if (cloudIdentity && isIdentityV2Local(cloudIdentity)) {
+        return cloudIdentity as IdentityV2;
+      }
+    } catch (err) {
+      console.error("Cloud identity fetch failed:", err);
+      // Fall through to local
+    }
+  }
+
+  // Fallback to local file
   const identityFile = getIdentityFile();
 
   if (!existsSync(identityFile)) {
@@ -169,7 +198,7 @@ export function scoreRelevance(fact: IdentityFact, task?: string): number {
 export async function projectIdentity(
   req: ProjectionRequest
 ): Promise<ProjectionResult> {
-  const identity = loadIdentityV2();
+  const identity = await loadIdentityV2Async();
 
   if (!identity) {
     return {

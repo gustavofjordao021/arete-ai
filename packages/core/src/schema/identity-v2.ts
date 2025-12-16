@@ -81,6 +81,10 @@ export const IdentitySettingsSchema = z.object({
   decayHalfLifeDays: z.number().default(DEFAULT_HALF_LIFE_DAYS),
   autoInfer: z.boolean().default(false),
   excludedDomains: z.array(z.string()).default([]),
+  // Auto-promote high-signal insights to identity facts (like ChatGPT/Claude memory)
+  autoPromote: z.boolean().default(true),
+  // Use Haiku for classification (vs heuristics-only)
+  useHaikuClassification: z.boolean().default(true),
 });
 
 export type IdentitySettings = z.infer<typeof IdentitySettingsSchema>;
@@ -152,6 +156,8 @@ export function createEmptyIdentityV2(deviceId: string): IdentityV2 {
       decayHalfLifeDays: DEFAULT_HALF_LIFE_DAYS,
       autoInfer: false,
       excludedDomains: [],
+      autoPromote: true,
+      useHaikuClassification: true,
     },
   };
 }
@@ -287,6 +293,8 @@ export function migrateV1ToV2(v1: AreteIdentity): IdentityV2 {
       decayHalfLifeDays: DEFAULT_HALF_LIFE_DAYS,
       autoInfer: false,
       excludedDomains: [],
+      autoPromote: true,
+      useHaikuClassification: true,
     },
   };
 }

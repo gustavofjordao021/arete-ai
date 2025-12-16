@@ -11,12 +11,32 @@ import { updateIdentityHandler, setConfigDir } from "./identity-update.js";
 const TEST_DIR = join(tmpdir(), "arete-mcp-update-test-" + Date.now());
 
 // Mock @arete/core for cloud client tests
+// Need to explicitly include createIdentityFact since importActual doesn't work reliably
 vi.mock("@arete/core", async () => {
-  const actual = await vi.importActual("@arete/core");
+  const actual = await vi.importActual("@arete/core") as any;
   return {
     ...actual,
     loadConfig: vi.fn(() => ({})),
     createCLIClient: vi.fn(),
+    // Explicitly re-export createIdentityFact since vitest has issues with partial mocks
+    createIdentityFact: (input: any) => {
+      const now = new Date().toISOString();
+      const source = input.source ?? "manual";
+      const isManual = source === "manual";
+      return {
+        id: crypto.randomUUID(),
+        category: input.category,
+        content: input.content,
+        confidence: input.confidence ?? (isManual ? 1.0 : 0.5),
+        lastValidated: now,
+        validationCount: isManual ? 1 : 0,
+        maturity: isManual ? "established" : "candidate",
+        source,
+        sourceRef: input.sourceRef,
+        createdAt: now,
+        updatedAt: now,
+      };
+    },
   };
 });
 
@@ -45,6 +65,21 @@ function createTestIdentity(overrides: Record<string, unknown> = {}) {
     custom: { theme: "dark" },
     sources: [],
     ...overrides,
+  };
+}
+
+// Helper to create a v2 identity structure
+function createTestIdentityV2(facts: unknown[] = []) {
+  return {
+    version: "2.0.0",
+    deviceId: "test-device",
+    facts,
+    core: { name: "Test User", role: "Developer" },
+    settings: {
+      decayHalfLifeDays: 60,
+      autoInfer: false,
+      excludedDomains: [],
+    },
   };
 }
 
@@ -474,6 +509,100 @@ describe("arete_update_identity tool", () => {
 
       const stored = JSON.parse(readFileSync(join(TEST_DIR, "identity.json"), "utf-8"));
       expect(stored.expertise).toContain("Supabase");
+    });
+  });
+
+  describe("v2 array value handling (Phase 5 bug fix)", () => {
+    it("unwraps single-element arrays to string", async () => {
+      const identity = createTestIdentityV2();
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await updateIdentityHandler({
+        section: "currentFocus",
+        operation: "add",
+        value: ["My vision statement"],
+        reasoning: "test",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+
+      // Check the stored fact content is a string, not "[\"My vision statement\"]"
+      const stored = JSON.parse(readFileSync(join(TEST_DIR, "identity.json"), "utf-8"));
+      const focusFacts = stored.facts.filter((f: any) => f.category === "focus");
+      expect(focusFacts.length).toBe(1);
+      expect(focusFacts[0].content).toBe("My vision statement");
+      expect(focusFacts[0].content).not.toContain("[");
+    });
+
+    it("joins multi-element arrays with semicolons", async () => {
+      const identity = createTestIdentityV2();
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await updateIdentityHandler({
+        section: "currentFocus",
+        operation: "add",
+        value: ["Point one", "Point two", "Point three"],
+        reasoning: "test",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+
+      const stored = JSON.parse(readFileSync(join(TEST_DIR, "identity.json"), "utf-8"));
+      const focusFacts = stored.facts.filter((f: any) => f.category === "focus");
+      expect(focusFacts[0].content).toBe("Point one; Point two; Point three");
+    });
+
+    it("handles string values directly", async () => {
+      const identity = createTestIdentityV2();
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await updateIdentityHandler({
+        section: "currentFocus",
+        operation: "add",
+        value: "Simple string",
+        reasoning: "test",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+
+      const stored = JSON.parse(readFileSync(join(TEST_DIR, "identity.json"), "utf-8"));
+      const focusFacts = stored.facts.filter((f: any) => f.category === "focus");
+      expect(focusFacts[0].content).toBe("Simple string");
+    });
+
+    it("handles empty arrays gracefully", async () => {
+      const identity = createTestIdentityV2();
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await updateIdentityHandler({
+        section: "currentFocus",
+        operation: "add",
+        value: [],
+        reasoning: "test",
+      });
+
+      // Should not add an empty fact
+      const stored = JSON.parse(readFileSync(join(TEST_DIR, "identity.json"), "utf-8"));
+      const focusFacts = stored.facts.filter((f: any) => f.category === "focus");
+      expect(focusFacts.length).toBe(0);
+    });
+
+    it("trims whitespace from array elements", async () => {
+      const identity = createTestIdentityV2();
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await updateIdentityHandler({
+        section: "currentFocus",
+        operation: "add",
+        value: ["  First point  ", "  Second point  "],
+        reasoning: "test",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+
+      const stored = JSON.parse(readFileSync(join(TEST_DIR, "identity.json"), "utf-8"));
+      const focusFacts = stored.facts.filter((f: any) => f.category === "focus");
+      expect(focusFacts[0].content).toBe("First point; Second point");
     });
   });
 });

@@ -59,6 +59,12 @@ npm run mcp                                  # Start server (stdio mode)
 - `arete_get_identity` — Get user identity for personalization
 - `arete_get_recent_context` — Get recent browsing/interaction context
 - `arete_add_context_event` — Record insights learned during conversation
+- `arete_update_identity` — Update identity sections with user approval
+- `arete_validate_fact` — Validate an identity fact (v2 identity)
+- `arete_context` — Task-aware identity projection (v2 identity)
+- `arete_infer` — Extract candidate facts from browsing patterns
+- `arete_reject_fact` — Block a fact from future inference
+- `arete_accept_candidate` — Accept a candidate fact from `arete_infer`
 
 **Claude Desktop configuration** (`~/.config/claude/claude_desktop_config.json`):
 ```json
@@ -71,6 +77,61 @@ npm run mcp                                  # Start server (stdio mode)
   }
 }
 ```
+
+### Required: System Prompt Setup
+
+For proactive context capture, add this block to your Claude Desktop system prompt (Settings → Claude's memory & system prompt):
+
+```xml
+<arete>
+You have Arete tools for persistent memory across conversations.
+
+REQUIRED WORKFLOW:
+1. Call arete_get_identity at conversation start to know who you're talking to
+2. After EVERY response where the user reveals a preference, constraint, or personal fact — make a tool call to store it
+3. Use arete_add_context_event for insights (type="insight", data={insight: "..."})
+4. Use arete_update_identity for structured facts (section, operation, value, reasoning)
+
+This is not optional. Storing context is part of completing the task.
+
+Examples of what to capture:
+- "I'm Brazilian" → store nationality
+- "I like using the air fryer" → store cooking preference
+- "I prefer short answers" → store communication preference
+- "I'm learning Rust" → store current focus
+- "I don't like the iron taste" → store food dislike
+
+Do NOT skip this because "no tools are needed for the question."
+These are OUTPUT tools for recording, not INPUT tools for searching.
+</arete>
+```
+
+**Why this is needed:** MCP tool descriptions alone don't drive proactive behavior. Claude defaults to "tools = search" unless explicitly instructed otherwise. This system prompt block enables automatic context capture.
+
+### Behavioral Patterns for Context Capture
+
+**Context capture is part of task completion, not an afterthought.**
+
+When using Arete tools, follow this workflow:
+
+1. **Start** with `arete_get_identity` to know who you're talking to
+2. **Use** that context to personalize your response
+3. **After** completing a task, consider: did the user reveal anything durable?
+4. **If yes**, use the appropriate tool to persist it
+
+**Recognize these moments:**
+
+| User says... | Action |
+|--------------|--------|
+| "I always prefer X" | `arete_update_identity` → communication preference |
+| "I'm a PM at..." | `arete_update_identity` → context/role |
+| "I'm learning Rust" | `arete_add_context_event` → current focus |
+| "I'm on iPad, can't run local models" | `arete_add_context_event` → constraint |
+| "We use PostgreSQL at work" | `arete_update_identity` → context/tech stack |
+| Demonstrates expertise through conversation | `arete_update_identity` → expertise |
+| Acts consistently with stored fact | `arete_validate_fact` → strengthen confidence |
+
+**The framing:** Answering a question well AND storing relevant context is one unit of work, not two.
 
 ---
 

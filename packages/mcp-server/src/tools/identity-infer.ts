@@ -2,6 +2,8 @@
  * arete_infer MCP tool - Inference Engine
  *
  * Extracts candidate facts from local context patterns.
+ * Uses cross-type inference to correlate signals across page_visit, insight,
+ * conversation, file, and selection events.
  * The "invisible" part: Returns guidance so Claude naturally knows how to present suggestions.
  */
 
@@ -13,7 +15,19 @@ import {
   createCLIClient,
   type IdentityV2,
   type IdentityFact,
+  type FactCategory,
 } from "@arete/core";
+
+// Cross-type inference modules
+import { aggregateContext, type ContextEvent as AggContextEvent } from "./context-aggregator.js";
+import { buildInferencePrompt } from "./inference-prompt.js";
+import {
+  parseInferenceResponse,
+  type CandidateFact as InferenceCandidateFact,
+  type ReinforceAction,
+  type DowngradeAction,
+} from "./inference-response.js";
+import { registerCandidates, type StoredCandidate } from "./candidate-registry.js";
 
 // Configurable directory (for testing)
 let CONFIG_DIR = join(homedir(), ".arete");
@@ -50,7 +64,7 @@ interface ContextEvent {
 
 interface CandidateFact {
   id: string;
-  category: "expertise" | "interest";
+  category: FactCategory;
   content: string;
   confidence: number;
   maturity: "candidate";
@@ -229,8 +243,8 @@ ${titles.slice(0, 5).join("\n")}
 Return ONLY a JSON object with these fields:
 - type: one of the categories above
 - name: A readable name for this site (e.g., "React", "ESPN", "Amazon")
-- label: A brief description for what the user is interested in (e.g., "React development", "sports", "online shopping")
-- category: "expertise" if tech-related, "interest" otherwise
+- label: A brief description for the user's focus (e.g., "React development", "sports", "online shopping")
+- category: "expertise" if tech-related, "focus" otherwise
 </output_format>
 
 <example>
@@ -462,9 +476,9 @@ function generateFactContent(info: DomainInfo): string {
 /**
  * Determine fact category based on domain type
  */
-function getFactCategory(type: DomainType): "expertise" | "interest" {
-  // Tech is expertise, everything else is interest
-  return type === "tech" ? "expertise" : "interest";
+function getFactCategory(type: DomainType): "expertise" | "focus" {
+  // Tech is expertise, everything else is focus
+  return type === "tech" ? "expertise" : "focus";
 }
 
 /**
@@ -481,7 +495,45 @@ function isIdentityV2(identity: unknown): identity is IdentityV2 {
   return obj.version === "2.0.0" && Array.isArray(obj.facts);
 }
 
-function loadContextEvents(): ContextEvent[] {
+/**
+ * Get CLI client for cloud operations (if authenticated)
+ */
+function getCloudClient(): ReturnType<typeof createCLIClient> | null {
+  const config = loadConfig();
+  if (!config || !config.apiKey || !config.supabaseUrl) {
+    return null;
+  }
+  return createCLIClient({
+    supabaseUrl: config.supabaseUrl,
+    apiKey: config.apiKey,
+  });
+}
+
+/**
+ * Load context events - tries cloud first, falls back to local
+ */
+async function loadContextEventsAsync(): Promise<ContextEvent[]> {
+  // Try cloud first if authenticated
+  const client = getCloudClient();
+  if (client) {
+    try {
+      const cloudEvents = await client.getRecentContext({ limit: 100 });
+      if (cloudEvents.length > 0) {
+        return cloudEvents.map(e => ({
+          id: e.id,
+          type: e.type,
+          source: e.source,
+          timestamp: e.timestamp,
+          data: e.data,
+        }));
+      }
+    } catch (err) {
+      console.error("Cloud context fetch failed:", err);
+      // Fall through to local
+    }
+  }
+
+  // Fallback to local file
   const contextFile = getContextFile();
   if (!existsSync(contextFile)) {
     return [];
@@ -688,6 +740,78 @@ export async function analyzeContextForPatternsWithHaiku(events: ContextEvent[])
   return candidates;
 }
 
+// --- Cross-Type Inference (Phase 4) ---
+
+const CROSS_TYPE_HAIKU_MODEL = "claude-3-haiku-20240307";
+
+/**
+ * Perform cross-type inference using Haiku to correlate signals
+ * across all event types (page_visit, insight, conversation, file, selection)
+ */
+async function performCrossTypeInference(
+  events: ContextEvent[],
+  existingFacts: IdentityFact[],
+  blockedFacts: BlockedFact[],
+  apiKey: string
+): Promise<{
+  candidates: InferenceCandidateFact[];
+  reinforce: ReinforceAction[];
+  downgrade: DowngradeAction[];
+}> {
+  try {
+    // Aggregate all context types
+    const aggregatedContext = aggregateContext(events as AggContextEvent[]);
+
+    // Build the inference prompt
+    const prompt = buildInferencePrompt({
+      context: aggregatedContext,
+      existingFacts,
+      blockedFacts,
+    });
+
+    // Call Haiku for cross-type analysis
+    const response = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: CROSS_TYPE_HAIKU_MODEL,
+        max_tokens: 1024,
+        messages: [{ role: "user", content: prompt }],
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`Cross-type Haiku API error: ${response.status}`);
+      return { candidates: [], reinforce: [], downgrade: [] };
+    }
+
+    const data = await response.json() as {
+      content: Array<{ type: string; text: string }>;
+    };
+
+    const text = data.content?.[0]?.text;
+    if (!text) {
+      return { candidates: [], reinforce: [], downgrade: [] };
+    }
+
+    // Parse the response
+    const result = parseInferenceResponse(text, existingFacts);
+
+    return {
+      candidates: result.candidates,
+      reinforce: result.reinforce,
+      downgrade: result.downgrade,
+    };
+  } catch (error) {
+    console.error("Cross-type inference failed:", error);
+    return { candidates: [], reinforce: [], downgrade: [] };
+  }
+}
+
 // --- Handler ---
 
 export interface InferInput {
@@ -698,9 +822,12 @@ export interface InferOutput {
   success: boolean;
   candidates: CandidateFact[];
   activitySummary: string[];
-  source: "local_context" | "rollup";
+  source: "local_context" | "rollup" | "haiku_analysis";
   error?: string;
   guidance?: string;
+  // Cross-type inference results (Phase 4)
+  reinforce: ReinforceAction[];
+  downgrade: DowngradeAction[];
 }
 
 export interface InferToolResult {
@@ -727,14 +854,51 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
   );
   const blockedIds = new Set(blockedFacts.map((b) => b.factId));
 
-  // Load and filter context events
-  const allEvents = loadContextEvents();
+  // Load and filter context events (from cloud or local)
+  const allEvents = await loadContextEventsAsync();
   const recentEvents = allEvents.filter(
     (e) => daysSince(e.timestamp) <= lookbackDays
   );
 
-  // Analyze for patterns (use Haiku when API key is set)
-  let candidates = await analyzeContextForPatternsWithHaiku(recentEvents);
+  // Initialize results
+  let candidates: CandidateFact[] = [];
+  let reinforce: ReinforceAction[] = [];
+  let downgrade: DowngradeAction[] = [];
+  let source: "local_context" | "rollup" | "haiku_analysis" = "local_context";
+
+  // Try cross-type inference with Haiku when API key is available
+  const apiKey = getAnthropicApiKey();
+  if (apiKey) {
+    const crossTypeResult = await performCrossTypeInference(
+      recentEvents,
+      existingFacts,
+      blockedFacts,
+      apiKey
+    );
+
+    // Convert cross-type candidates to CandidateFact format
+    if (crossTypeResult.candidates.length > 0) {
+      candidates = crossTypeResult.candidates.map((c) => ({
+        id: crypto.randomUUID(),
+        category: c.category,
+        content: c.content,
+        confidence: c.confidence,
+        maturity: "candidate" as const,
+        source: "inferred" as const,
+        sourceRef: c.signals.join(", "),
+      }));
+      source = "haiku_analysis";
+    }
+
+    reinforce = crossTypeResult.reinforce;
+    downgrade = crossTypeResult.downgrade;
+  }
+
+  // Fallback to domain-only analysis if no cross-type candidates
+  if (candidates.length === 0) {
+    candidates = await analyzeContextForPatternsWithHaiku(recentEvents);
+    source = "local_context";
+  }
 
   // Filter out existing and blocked facts
   candidates = candidates.filter((c) => {
@@ -764,6 +928,32 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
   // Limit to top 5 candidates
   candidates = candidates.slice(0, 5);
 
+  // Register candidates for later acceptance via arete_accept_candidate
+  // registerCandidates filters out stale/suppressed candidates
+  let filteredCandidates = candidates;
+  if (candidates.length > 0) {
+    const candidateInputs = candidates.map((c) => ({
+      id: c.id,
+      category: c.category,
+      content: c.content,
+      confidence: c.confidence,
+      sourceRef: c.sourceRef || "",
+      signals: c.sourceRef ? c.sourceRef.split(", ") : [],
+      createdAt: new Date().toISOString(),
+    }));
+    const registered = registerCandidates(candidateInputs);
+
+    // Only return non-stale candidates
+    const registeredIds = new Set(registered.map((r) => r.id));
+    // Match by content since IDs might differ
+    const registeredContents = new Set(
+      registered.map((r) => r.content.toLowerCase().trim())
+    );
+    filteredCandidates = candidates.filter((c) =>
+      registeredContents.has(c.content.toLowerCase().trim())
+    );
+  }
+
   // Build activity summary from ALL recent events (not just candidates)
   const activityDomains = new Map<string, { count: number; titles: string[] }>();
   for (const event of recentEvents) {
@@ -792,20 +982,21 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
     .map(([domain]) => getDomainName(domain));
 
   // Build conversational response with activity summary + candidates
+  // Use filteredCandidates (stale candidates are excluded)
   let text: string;
-  if (topDomains.length === 0 && candidates.length === 0) {
+  if (topDomains.length === 0 && filteredCandidates.length === 0) {
     text = "Not much recent activity to summarize.";
-  } else if (candidates.length === 0) {
+  } else if (filteredCandidates.length === 0) {
     // Activity but no new patterns to remember
     text = `Recent activity: ${topDomains.join(", ")}. Nothing new to remember.`;
   } else {
     // Activity + candidates to consider
-    const observations = candidates.map((c) => {
+    const observations = filteredCandidates.map((c) => {
       const visits = c.visitCount ? `${c.visitCount} visits` : "";
-      return `${c.content} (${visits} to ${c.sourceRef})`;
+      return `${c.content} (${visits ? visits + " to " : "from "}${c.sourceRef})`;
     });
 
-    if (candidates.length === 1) {
+    if (filteredCandidates.length === 1) {
       text = `Recent activity: ${topDomains.join(", ")}.\n\nI noticed you've been exploring ${observations[0]}. Worth remembering?`;
     } else {
       const last = observations.pop();
@@ -813,18 +1004,32 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
     }
   }
 
+  // Add reinforce/downgrade suggestions to text if present
+  if (reinforce.length > 0 || downgrade.length > 0) {
+    if (reinforce.length > 0) {
+      text += `\n\nSome existing knowledge looks well-supported by recent activity.`;
+    }
+    if (downgrade.length > 0) {
+      text += `\n\nSome older knowledge might need review - no recent activity.`;
+    }
+  }
+
   // Guidance for natural behavior
   const guidance =
     "Summarize their activity naturally without listing domains. " +
     "If candidates exist, ask casually if worth remembering. " +
-    "If they confirm, use arete_update_identity. If they decline, acknowledge briefly.";
+    "If they confirm, use arete_accept_candidate with the candidateId. If they decline, acknowledge briefly. " +
+    "Reinforce suggestions indicate facts that are well-supported. " +
+    "Downgrade suggestions indicate facts that may be stale.";
 
   const output: InferOutput = {
     success: true,
-    candidates,
+    candidates: filteredCandidates,
     activitySummary: topDomains,
-    source: "local_context",
+    source,
     guidance,
+    reinforce,
+    downgrade,
   };
 
   return {

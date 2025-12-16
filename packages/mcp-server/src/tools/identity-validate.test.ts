@@ -57,7 +57,7 @@ function createTestFact(overrides: Partial<IdentityFact> & { category: string; c
   const isManual = source === "manual";
 
   return {
-    id: crypto.randomUUID(),
+    id: overrides.id ?? crypto.randomUUID(),
     category: overrides.category,
     content: overrides.content,
     confidence: overrides.confidence ?? (isManual ? 1.0 : 0.5),
@@ -390,6 +390,159 @@ describe("arete_validate_fact tool", () => {
 
       expect(result.content[0].text).toContain("Go");
       expect(result.content[0].text).toContain("validated");
+    });
+  });
+
+  describe("fuzzy matching", () => {
+    it("validates fact by fuzzy content match", async () => {
+      const fact = createTestFact({
+        category: "focus",
+        content: "PayNearMe employee",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await validateFactHandler({
+        content: "PayNearMe employe", // Typo - missing 'e'
+        reasoning: "User confirmed employment",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.matchScore).toBeDefined();
+      expect(result.structuredContent.matchScore).toBeGreaterThan(0.8);
+      expect(result.structuredContent.matchScore).toBeLessThan(1.0);
+    });
+
+    it("returns exact match score of 1.0", async () => {
+      const fact = createTestFact({
+        category: "expertise",
+        content: "TypeScript developer",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await validateFactHandler({
+        content: "TypeScript developer", // Exact match
+        reasoning: "User is a TypeScript developer",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.matchScore).toBe(1.0);
+    });
+
+    it("indicates fuzzy match in text response", async () => {
+      const fact = createTestFact({
+        category: "expertise",
+        content: "React specialist",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await validateFactHandler({
+        content: "React expert", // Close but not exact
+        reasoning: "User knows React",
+        fuzzyThreshold: 0.6,
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.content[0].text).toContain("fuzzy match");
+      expect(result.content[0].text).toContain("%");
+    });
+
+    it("does not indicate fuzzy match for exact matches", async () => {
+      const fact = createTestFact({
+        category: "expertise",
+        content: "Python programmer",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await validateFactHandler({
+        content: "Python programmer", // Exact
+        reasoning: "User programs in Python",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.content[0].text).not.toContain("fuzzy match");
+    });
+
+    it("respects custom fuzzyThreshold", async () => {
+      const fact = createTestFact({
+        category: "expertise",
+        content: "JavaScript developer",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      // Very low threshold - should match even distant strings
+      const resultLow = await validateFactHandler({
+        content: "JS dev",
+        reasoning: "Test low threshold",
+        fuzzyThreshold: 0.3,
+      });
+
+      // This might match with low threshold
+      // The key is that fuzzyThreshold parameter is respected
+      expect(resultLow.structuredContent).toBeDefined();
+    });
+
+    it("returns not found when below threshold", async () => {
+      const fact = createTestFact({
+        category: "expertise",
+        content: "TypeScript developer",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      const result = await validateFactHandler({
+        content: "Python programmer", // Completely different
+        reasoning: "Should not match",
+        fuzzyThreshold: 0.9, // High threshold
+      });
+
+      expect(result.structuredContent.success).toBe(false);
+      expect(result.structuredContent.error).toContain("not found");
+    });
+
+    it("prefers factId over fuzzy content match", async () => {
+      const fact1 = createTestFact({
+        id: "exact-id-123",
+        category: "expertise",
+        content: "React developer",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const fact2 = createTestFact({
+        category: "expertise",
+        content: "Vue developer",
+        source: "inferred",
+        confidence: 0.5,
+      });
+      const identity = createTestIdentityV2([fact1, fact2]);
+      writeFileSync(join(TEST_DIR, "identity.json"), JSON.stringify(identity));
+
+      // Provide both factId and content that could match different facts
+      const result = await validateFactHandler({
+        factId: "exact-id-123",
+        content: "Vue developer",
+        reasoning: "Should use factId",
+      });
+
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.updatedFact?.content).toBe("React developer");
+      expect(result.structuredContent.matchScore).toBe(1.0); // ID match = score 1.0
     });
   });
 

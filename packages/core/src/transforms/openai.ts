@@ -37,7 +37,7 @@ export class OpenAITransform extends BaseTransform {
     }
 
     // Expertise
-    if (this.includeSection("expertise", options) && identity.expertise.length > 0) {
+    if (this.includeSection("expertise", options) && identity.expertise?.length > 0) {
       sections.push(`### Areas of Expertise\n${this.formatList(identity.expertise)}`);
       includedSections.push("expertise");
     }
@@ -83,21 +83,22 @@ export class OpenAITransform extends BaseTransform {
 
   private formatCommunication(identity: AreteIdentity): string {
     const sections: string[] = [];
-    const { communication } = identity;
+    const communication = identity.communication;
+    if (!communication) return "";
 
     if (communication.voice) {
       sections.push(`**Preferred voice:** ${communication.voice}`);
     }
 
-    if (communication.style.length > 0) {
+    if (communication.style?.length > 0) {
       sections.push(`**Style:**\n${this.formatList(communication.style)}`);
     }
 
-    if (communication.format.length > 0) {
+    if (communication.format?.length > 0) {
       sections.push(`**Format:**\n${this.formatList(communication.format)}`);
     }
 
-    if (communication.avoid.length > 0) {
+    if (communication.avoid?.length > 0) {
       sections.push(`**Avoid:**\n${this.formatList(communication.avoid)}`);
     }
 
@@ -106,9 +107,10 @@ export class OpenAITransform extends BaseTransform {
 
   private formatFocus(identity: AreteIdentity): string {
     const sections: string[] = [];
-    const { currentFocus } = identity;
+    const currentFocus = identity.currentFocus;
+    if (!currentFocus) return "";
 
-    if (currentFocus.projects.length > 0) {
+    if (currentFocus.projects?.length > 0) {
       const projectLines = currentFocus.projects.map(p => {
         const status = p.status !== "active" ? ` _(${p.status})_` : "";
         return `- **${p.name}**${status}: ${p.description}`;
@@ -116,7 +118,7 @@ export class OpenAITransform extends BaseTransform {
       sections.push(`**Projects:**\n${projectLines.join("\n")}`);
     }
 
-    if (currentFocus.goals.length > 0) {
+    if (currentFocus.goals?.length > 0) {
       sections.push(`**Goals:**\n${this.formatList(currentFocus.goals)}`);
     }
 
@@ -125,13 +127,14 @@ export class OpenAITransform extends BaseTransform {
 
   private formatContext(identity: AreteIdentity): string {
     const sections: string[] = [];
-    const { context } = identity;
+    const context = identity.context;
+    if (!context) return "";
 
-    if (context.professional.length > 0) {
+    if (context.professional?.length > 0) {
       sections.push(`**Professional:**\n${this.formatList(context.professional)}`);
     }
 
-    if (context.personal.length > 0) {
+    if (context.personal?.length > 0) {
       sections.push(`**Personal:**\n${this.formatList(context.personal)}`);
     }
 

@@ -316,3 +316,125 @@ describe("arete_add_context_event tool", () => {
 // The local fallback behavior is implicitly tested by the existing
 // arete_get_recent_context and arete_add_context_event tests above,
 // which run without cloud credentials.
+
+describe("auto-promote integration", () => {
+  beforeEach(() => {
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true });
+    }
+    mkdirSync(TEST_DIR, { recursive: true });
+    setConfigDir(TEST_DIR);
+
+    // Create v2 identity file with autoPromote enabled
+    const identityV2 = {
+      version: "2.0.0",
+      deviceId: "test-device",
+      facts: [],
+      core: {},
+      settings: {
+        decayHalfLifeDays: 60,
+        autoInfer: false,
+        excludedDomains: [],
+        autoPromote: true,
+      },
+    };
+    writeFileSync(
+      join(TEST_DIR, "identity.json"),
+      JSON.stringify(identityV2, null, 2)
+    );
+  });
+
+  afterEach(() => {
+    if (existsSync(TEST_DIR)) {
+      rmSync(TEST_DIR, { recursive: true });
+    }
+  });
+
+  it("auto-promotes high-signal insight to identity", async () => {
+    const result = await addContextEventHandler({
+      type: "insight",
+      data: { insight: "I'm Brazilian" },
+    });
+
+    expect(result.structuredContent.success).toBe(true);
+    expect(result.structuredContent.promotedFact).toBeDefined();
+    expect(result.structuredContent.promotedFact?.content).toContain("Brazilian");
+    expect(result.content[0].text).toContain("Remembered:");
+
+    // Verify fact was saved to identity
+    const identity = JSON.parse(
+      readFileSync(join(TEST_DIR, "identity.json"), "utf-8")
+    );
+    expect(identity.facts.length).toBe(1);
+    expect(identity.facts[0].content).toContain("Brazilian");
+  });
+
+  it("does not promote low-signal insight", async () => {
+    const result = await addContextEventHandler({
+      type: "insight",
+      data: { insight: "The weather is nice today" },
+    });
+
+    expect(result.structuredContent.success).toBe(true);
+    expect(result.structuredContent.promotedFact).toBeUndefined();
+    expect(result.content[0].text).not.toContain("Remembered:");
+
+    // Verify no fact was saved
+    const identity = JSON.parse(
+      readFileSync(join(TEST_DIR, "identity.json"), "utf-8")
+    );
+    expect(identity.facts.length).toBe(0);
+  });
+
+  it("does not auto-promote non-insight events", async () => {
+    const result = await addContextEventHandler({
+      type: "page_visit",
+      data: { url: "https://example.com", title: "Example" },
+    });
+
+    expect(result.structuredContent.success).toBe(true);
+    expect(result.structuredContent.promotedFact).toBeUndefined();
+    expect(result.content[0].text).not.toContain("Remembered:");
+  });
+
+  it("skips promotion if similar fact already exists", async () => {
+    // Add existing Brazilian fact
+    const identityWithFact = {
+      version: "2.0.0",
+      deviceId: "test-device",
+      facts: [
+        {
+          id: "existing-fact",
+          category: "context",
+          content: "Brazilian nationality",
+          confidence: 0.8,
+          maturity: "established",
+          source: "manual",
+          lastValidated: new Date().toISOString(),
+          validationCount: 2,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+      core: {},
+      settings: { autoPromote: true },
+    };
+    writeFileSync(
+      join(TEST_DIR, "identity.json"),
+      JSON.stringify(identityWithFact, null, 2)
+    );
+
+    const result = await addContextEventHandler({
+      type: "insight",
+      data: { insight: "I'm Brazilian" },
+    });
+
+    expect(result.structuredContent.success).toBe(true);
+    expect(result.structuredContent.promotedFact).toBeUndefined();
+    // Still saved the context event
+    const context = JSON.parse(
+      readFileSync(join(TEST_DIR, "context.json"), "utf-8")
+    );
+    expect(context.events.length).toBe(1);
+  });
+});

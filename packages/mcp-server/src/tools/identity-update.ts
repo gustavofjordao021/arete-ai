@@ -158,6 +158,34 @@ function sectionToCategory(section: string, field?: string): FactCategory {
 }
 
 /**
+ * Normalize value to a clean string
+ * - Single-element arrays unwrap to the string
+ * - Multi-element arrays join with "; "
+ * - Strings pass through trimmed
+ * - Empty arrays return empty string
+ */
+function normalizeValueToString(value: unknown): string {
+  if (Array.isArray(value)) {
+    // Filter to strings and trim
+    const strings = value
+      .filter((item): item is string => typeof item === "string")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    if (strings.length === 0) return "";
+    if (strings.length === 1) return strings[0];
+    return strings.join("; ");
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  // Fallback for other types
+  return String(value);
+}
+
+/**
  * Apply v2 operation - adds/removes facts
  */
 function applyV2Operation(
@@ -166,7 +194,15 @@ function applyV2Operation(
 ): { previousValue: unknown; newValue: unknown } {
   const { section, operation, field, value } = input;
   const category = sectionToCategory(section, field);
-  const content = String(value);
+  const content = normalizeValueToString(value);
+
+  // Don't add empty facts
+  if (!content) {
+    return {
+      previousValue: identity.facts.map((f) => f.content),
+      newValue: identity.facts.map((f) => f.content),
+    };
+  }
 
   // Find existing fact with same content
   const existingIndex = identity.facts.findIndex(
@@ -410,7 +446,16 @@ export async function updateIdentityHandler(
       };
     }
 
-    // Cloud sync for v2 not implemented yet
+    // Sync v2 identity to cloud if authenticated (best effort)
+    const client = getCloudClient();
+    if (client) {
+      try {
+        await client.saveIdentity(loaded.identity);
+      } catch (err) {
+        // Log but don't fail - local save succeeded
+        console.error("Cloud sync failed:", err);
+      }
+    }
   } else {
     // V1 identity: use legacy operation
     const result = applyOperation(loaded.identity, input);

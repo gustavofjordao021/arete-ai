@@ -192,6 +192,8 @@ describe("IdentityV2 Schema", () => {
         decayHalfLifeDays: 60,
         autoInfer: false,
         excludedDomains: [],
+        autoPromote: true,
+        useHaikuClassification: true,
       },
     };
 
@@ -209,6 +211,8 @@ describe("IdentityV2 Schema", () => {
         decayHalfLifeDays: 60,
         autoInfer: false,
         excludedDomains: [],
+        autoPromote: true,
+        useHaikuClassification: true,
       },
     };
 
@@ -227,6 +231,8 @@ describe("IdentityV2 Schema", () => {
         decayHalfLifeDays: 60,
         autoInfer: false,
         excludedDomains: [],
+        autoPromote: true,
+        useHaikuClassification: true,
       },
     };
 

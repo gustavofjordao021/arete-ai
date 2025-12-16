@@ -18,7 +18,12 @@ import {
   loadConfig,
   createCLIClient,
   type CLIClient,
+  type IdentityFact,
 } from "@arete/core";
+import {
+  autoPromoteInsight,
+  setConfigDir as setAutoPromoteConfigDir,
+} from "./auto-promote.js";
 
 // Constants
 const MAX_EVENTS = 100;
@@ -29,6 +34,8 @@ let CONFIG_DIR = join(homedir(), ".arete");
 
 export function setConfigDir(dir: string): void {
   CONFIG_DIR = dir;
+  // Also set auto-promote's config dir for integration
+  setAutoPromoteConfigDir(dir);
 }
 
 export function getConfigDir(): string {
@@ -225,6 +232,8 @@ export interface AddContextEventOutput {
   success: boolean;
   event?: ContextEvent;
   error?: string;
+  /** Fact that was auto-promoted from insight (if any) */
+  promotedFact?: IdentityFact;
 }
 
 export async function addContextEventHandler(
@@ -276,14 +285,39 @@ export async function addContextEventHandler(
     }
   }
 
+  // Auto-promote insights to identity facts
+  let promotedFact: IdentityFact | undefined;
+  if (input.type === "insight" && typeof input.data.insight === "string") {
+    try {
+      const result = await autoPromoteInsight({
+        insight: input.data.insight,
+        source: eventSource,
+      });
+      if (result.promoted && result.fact) {
+        promotedFact = result.fact;
+      }
+    } catch (err) {
+      console.error("Auto-promote failed:", err);
+    }
+  }
+
   const output: AddContextEventOutput = {
     success: true,
     event,
+    promotedFact,
   };
 
-  const suffix = syncedToCloud ? " (synced to cloud)" : "";
+  // Build response text
+  let text: string;
+  if (promotedFact) {
+    text = `Remembered: ${promotedFact.content}`;
+  } else {
+    const suffix = syncedToCloud ? " (synced to cloud)" : "";
+    text = `Added ${input.type} event.${suffix}`;
+  }
+
   return {
-    content: [{ type: "text", text: `Added ${input.type} event.${suffix}` }],
+    content: [{ type: "text", text }],
     structuredContent: output,
   };
 }
