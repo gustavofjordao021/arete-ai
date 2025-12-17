@@ -41,6 +41,10 @@
     "context",
     "memory"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gustavofjordao021/ai-collective-hackaton-arete"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=18"

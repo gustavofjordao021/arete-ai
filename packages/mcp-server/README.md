@@ -1,6 +1,6 @@
 # arete-mcp-server
 
-MCP server for [Arete](https://github.com/yourusername/arete) portable AI identity. Makes Claude Desktop remember who you are across conversations.
+MCP server for [Arete](https://github.com/gustavofjordao021/ai-collective-hackaton-arete) portable AI identity. Makes Claude Desktop remember who you are across conversations.
 
 ## Quick Start
 
@@ -15,7 +15,7 @@ npx arete-mcp-server
 ```bash
 npx arete-mcp-server  # First, make sure it works
 # Then sign up via CLI:
-git clone https://github.com/yourusername/arete
+git clone https://github.com/gustavofjordao021/ai-collective-hackaton-arete
 cd arete && npm install && npm run build
 npm run cli -- auth signup YOUR-INVITE-CODE your@email.com
 ```
