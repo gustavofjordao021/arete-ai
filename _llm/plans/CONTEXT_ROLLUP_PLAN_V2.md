@@ -2,7 +2,7 @@
 
 > Created: 2025-12-08
 > Status: Planning
-> Depends on: [ARETE_V2_ARCHITECTURE.md](./ARETE_V2_ARCHITECTURE.md)
+> Depends on: [ARCHITECTURE.md](../specs/ARCHITECTURE.md) (Identity System v2)
 > Replaces: [CONTEXT_ROLLUP_PLAN_V1.md](../archive/CONTEXT_ROLLUP_PLAN_V1.md)
 
 ## Goal

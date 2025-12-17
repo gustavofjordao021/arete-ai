@@ -180,6 +180,105 @@ arete/
 
 ---
 
+## Identity System (v2)
+
+The identity layer uses a three-tier model inspired by [CASS Memory System](https://github.com/Dicklesworthstone/cass_memory_system).
+
+### Three-Layer Model
+
+```
+CONTEXT (events)     → Raw signals: browsing, conversations, manual input
+       ↓
+IDENTITY (facts)     → Structured facts with confidence + maturity
+       ↓
+PROJECTION           → Context-aware slice served to AI interactions
+```
+
+| Layer | What it stores | How it changes | Who sees it |
+|-------|---------------|----------------|-------------|
+| **Context** | Raw events (page visits, conversations) | Append-only, auto-rollup | AI reads patterns |
+| **Identity** | Structured facts about user | AI proposes, user approves | AI reads, projects |
+| **Projection** | Task-relevant slice | Generated on-demand | AI uses in system prompt |
+
+### Identity Fact Schema
+
+```typescript
+interface IdentityFact {
+  id: string;                           // UUID
+  category: "core" | "expertise" | "preference" | "context" | "focus";
+  content: string;                      // The actual fact
+
+  // Confidence tracking
+  confidence: number;                   // 0.0-1.0, decays over time
+  lastValidated: string;                // ISO timestamp
+  maturity: "candidate" | "established" | "proven";
+
+  // Provenance
+  source: "manual" | "inferred" | "conversation";
+  sourceRef?: string;                   // conversation ID, URL, etc.
+}
+```
+
+### Confidence Decay
+
+Facts naturally fade if not validated (half-life: 60 days).
+
+```typescript
+function getEffectiveConfidence(fact: IdentityFact, halfLifeDays = 60): number {
+  const daysSinceValidation = daysSince(fact.lastValidated);
+  return fact.confidence * Math.pow(0.5, daysSinceValidation / halfLifeDays);
+}
+```
+
+| Effective Confidence | Behavior |
+|---------------------|----------|
+| > 0.7 | Always included in projection |
+| 0.3 - 0.7 | Included if relevant to task |
+| < 0.3 | Suggest re-validation or removal |
+| < 0.1 | Auto-archive |
+
+### Maturity State Machine
+
+```
+      [candidate] ─────validation────▶ [established] ────validation────▶ [proven]
+           │                                                                 │
+           │ (ignored/rejected)                                              │ (decay)
+           ▼                                                                 ▼
+       (deleted)                                                         (demoted)
+```
+
+| Maturity | How to reach | In projection? |
+|----------|--------------|----------------|
+| `candidate` | Inferred from context | Only if highly relevant |
+| `established` | Validated 2+ times OR manual | Yes, with task relevance |
+| `proven` | Validated 5+ times | Always included |
+
+### MCP Tools
+
+| Tool | Purpose |
+|------|---------|
+| `arete_get_identity` | Get identity with confidence scores |
+| `arete_update_identity` | Create/update facts with maturity tracking |
+| `arete_validate_fact` | Bump confidence + lastValidated |
+| `arete_context` | Task-aware projection (ranked, relevant facts) |
+| `arete_infer` | Extract candidate facts from browsing patterns |
+| `arete_reject_fact` | Block a fact from future inference |
+| `arete_accept_candidate` | Accept a candidate from `arete_infer` |
+| `arete_get_recent_context` | Get raw context events |
+| `arete_add_context_event` | Record new context event |
+
+### File Structure
+
+```
+~/.arete/
+├── identity.json      # IdentityV2 with facts array
+├── context.json       # ContextEvent[] (ring buffer)
+├── blocked.json       # Rejected inferences
+└── archive/           # Expired facts (confidence < 0.1)
+```
+
+---
+
 ## Related Docs
 
 - [IDENTITY_SCHEMA.md](./IDENTITY_SCHEMA.md) — Detailed identity schema design
