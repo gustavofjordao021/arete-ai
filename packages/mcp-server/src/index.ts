@@ -27,6 +27,33 @@ import { contextHandler } from "./tools/identity-context.js";
 import { inferHandler } from "./tools/identity-infer.js";
 import { rejectFactHandler } from "./tools/identity-reject.js";
 import { acceptCandidateHandler, acceptCandidatesHandler } from "./tools/identity-accept.js";
+import {
+  initTelemetry,
+  shutdownTelemetry,
+  getTelemetryClient,
+} from "@arete/telemetry";
+
+// Initialize telemetry (ON by default, opt-out via ~/.arete/config.json)
+const telemetry = initTelemetry();
+telemetry.setConnector("mcp-server");
+
+/**
+ * Wrapper to track tool execution with telemetry
+ */
+async function withTelemetry<T>(
+  toolName: string,
+  handler: () => Promise<T>
+): Promise<T> {
+  const startTime = Date.now();
+  try {
+    const result = await handler();
+    telemetry.trackToolCall(toolName, true, Date.now() - startTime);
+    return result;
+  } catch (error) {
+    telemetry.trackToolCall(toolName, false, Date.now() - startTime);
+    throw error;
+  }
+}
 
 const server = new McpServer({
   name: "arete",
@@ -55,15 +82,17 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await getIdentityHandler(input);
-    // Return text content plus JSON stringified data
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_get_identity", async () => {
+      const result = await getIdentityHandler(input);
+      // Return text content plus JSON stringified data
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -98,14 +127,28 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await getContextHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_get_recent_context", async () => {
+      const result = await getContextHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track context retrieval metrics
+      const events = result.structuredContent?.events || [];
+      telemetry.track({
+        event: "context.events_retrieved",
+        properties: {
+          count: events.length,
+          source_filter: input.source,
+          type_filter: input.type,
+        },
+      });
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -140,14 +183,24 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await addContextEventHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_add_context_event", async () => {
+      const result = await addContextEventHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track context event addition
+      telemetry.trackContextEventAdded(
+        input.type as "page_visit" | "selection" | "conversation" | "insight" | "file",
+        input.source || "claude-desktop",
+        (result.structuredContent as unknown as Record<string, unknown>)?.autoPromoted as boolean | undefined
+      );
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -188,14 +241,23 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await updateIdentityHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_update_identity", async () => {
+      const result = await updateIdentityHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track fact creation if a new fact was added
+      if (result.structuredContent?.success && input.operation === "add") {
+        const category = input.section as "core" | "expertise" | "preference" | "context" | "focus";
+        telemetry.trackFactCreated(category, "conversation", "established");
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -234,14 +296,35 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await validateFactHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_validate_fact", async () => {
+      const result = await validateFactHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track fact validation
+      if (result.structuredContent?.success) {
+        const sc = result.structuredContent as unknown as Record<string, unknown>;
+        const updatedFact = sc.updatedFact as Record<string, unknown> | undefined;
+        const previousMaturity = (sc.previousMaturity || "candidate") as string;
+        const currentMaturity = (updatedFact?.maturity || "candidate") as string;
+        const promoted = previousMaturity !== currentMaturity;
+        const matchScore = sc.matchScore as number | undefined;
+        const factId = (updatedFact?.id || input.factId) as string | undefined;
+        telemetry.trackFactValidated(
+          promoted,
+          previousMaturity as "candidate" | "established" | "proven",
+          currentMaturity as "candidate" | "established" | "proven",
+          input.factId ? "id" : (matchScore === 1.0 ? "exact" : "fuzzy"),
+          factId
+        );
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -281,14 +364,38 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await contextHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_context", async () => {
+      const result = await contextHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track projection call and fact surfacing
+      const sc = result.structuredContent as unknown as Record<string, unknown>;
+      const facts = sc?.facts as Array<Record<string, unknown>> | undefined;
+      if (facts && facts.length > 0) {
+        const totalFacts = (sc.totalFacts || 0) as number;
+        telemetry.trackProjectionCalled(
+          !!input.task,
+          facts.length,
+          totalFacts - facts.length
+        );
+
+        // Track each surfaced fact for utilization metrics
+        for (const fact of facts) {
+          telemetry.trackFactSurfaced(
+            (fact.category || "focus") as "core" | "expertise" | "preference" | "context" | "focus",
+            (fact.maturity || "candidate") as "candidate" | "established" | "proven",
+            (fact.relevanceScore || 0.5) as number
+          );
+        }
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -318,14 +425,43 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await inferHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_infer", async () => {
+      const result = await inferHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track inference call and candidate proposals
+      const sc = result.structuredContent as unknown as Record<string, unknown>;
+      const candidates = sc?.candidates as Array<Record<string, unknown>> | undefined;
+      if (candidates && candidates.length > 0) {
+        const contextEventsAnalyzed = (sc.contextEventsAnalyzed || sc.eventsAnalyzed || 0) as number;
+        const source = (sc.source || "local_context") as string;
+        telemetry.track({
+          event: "identity.infer_called",
+          properties: {
+            lookback_days: input.lookbackDays || 7,
+            context_event_count: contextEventsAnalyzed,
+            source: source as "local_context" | "rollup" | "haiku_analysis",
+          },
+        });
+
+        // Track each proposed candidate (for approval rate calculation)
+        for (const candidate of candidates) {
+          telemetry.trackCandidateProposed(
+            ((candidate.category || "focus") as string) as "core" | "expertise" | "preference" | "context" | "focus",
+            (candidate.confidence || 0.5) as number,
+            candidates.length,
+            candidate.id as string | undefined
+          );
+        }
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -357,14 +493,28 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await rejectFactHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_reject_fact", async () => {
+      const result = await rejectFactHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track candidate rejection
+      if (result.structuredContent?.success) {
+        const sc = result.structuredContent as unknown as Record<string, unknown>;
+        const blockedFactId = sc.blockedFactId as string | undefined;
+        telemetry.trackCandidateRejected(
+          !!input.reason,
+          input.factId,  // candidateId (input factId was the candidate)
+          blockedFactId  // factId (the blocked entry created)
+        );
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -399,14 +549,28 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await acceptCandidateHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_accept_candidate", async () => {
+      const result = await acceptCandidateHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track candidate acceptance
+      if (result.structuredContent?.success) {
+        const fact = result.structuredContent.fact;
+        telemetry.trackCandidateAccepted(
+          (fact?.category || "focus") as "core" | "expertise" | "preference" | "context" | "focus",
+          false, // single acceptance
+          input.candidateId,
+          fact?.id as string | undefined
+        );
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -434,14 +598,31 @@ server.registerTool(
     },
   },
   async (input) => {
-    const result = await acceptCandidatesHandler(input);
-    const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-    return {
-      content: [
-        ...result.content,
-        { type: "text" as const, text: `\n---\n${jsonContent}` },
-      ],
-    };
+    return withTelemetry("arete_accept_candidates", async () => {
+      const result = await acceptCandidatesHandler(input);
+      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+
+      // Track batch candidate acceptance
+      if (result.structuredContent?.success) {
+        const sc = result.structuredContent as unknown as Record<string, unknown>;
+        const facts = (sc.facts || sc.accepted || []) as Array<Record<string, unknown>>;
+        for (const fact of facts) {
+          telemetry.trackCandidateAccepted(
+            ((fact?.category || "focus") as string) as "core" | "expertise" | "preference" | "context" | "focus",
+            true, // batch acceptance
+            fact?.candidateId as string | undefined,
+            fact?.id as string | undefined
+          );
+        }
+      }
+
+      return {
+        content: [
+          ...result.content,
+          { type: "text" as const, text: `\n---\n${jsonContent}` },
+        ],
+      };
+    });
   }
 );
 
@@ -452,7 +633,177 @@ async function main() {
   console.error("Arete MCP server running on stdio");
 }
 
-main().catch((error) => {
-  console.error("Fatal error:", error);
-  process.exit(1);
-});
+// Graceful shutdown handlers to flush telemetry events
+async function shutdown(signal: string) {
+  console.error(`\n${signal} received, shutting down...`);
+  await shutdownTelemetry();
+  process.exit(0);
+}
+
+// Setup command - inline signup for easy onboarding
+async function setup(inviteCode?: string, email?: string) {
+  const readline = await import("readline");
+  const fs = await import("fs");
+  const path = await import("path");
+  const os = await import("os");
+
+  const CONFIG_DIR = path.join(os.homedir(), ".arete");
+  const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
+  const SUPABASE_URL = "https://dvjgxddjmevmmtzqmzrm.supabase.co";
+
+  console.log("\n🔮 Arete MCP Server Setup\n");
+
+  // Check if already configured
+  if (fs.existsSync(CONFIG_FILE)) {
+    try {
+      const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
+      if (config.apiKey) {
+        console.log(`Already configured for: ${config.email || config.userId}`);
+        console.log(`Config file: ${CONFIG_FILE}`);
+        console.log("\nTo reconfigure, delete ~/.arete/config.json and run setup again.");
+        process.exit(0);
+      }
+    } catch {
+      // Config exists but invalid, continue with setup
+    }
+  }
+
+  // Helper to prompt for input
+  const prompt = (question: string): Promise<string> => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+    return new Promise((resolve) => {
+      rl.question(question, (answer) => {
+        rl.close();
+        resolve(answer.trim());
+      });
+    });
+  };
+
+  // Get invite code
+  let code = inviteCode;
+  if (!code) {
+    console.log("To sign up, you need an invite code from the Arete team.");
+    console.log("(Request one at: https://github.com/gustavofjordao021/ai-collective-hackaton-arete)\n");
+    code = await prompt("Invite code: ");
+  }
+
+  if (!code) {
+    console.error("Error: Invite code is required.");
+    process.exit(1);
+  }
+
+  // Get email
+  let userEmail = email;
+  if (!userEmail) {
+    userEmail = await prompt("Email: ");
+  }
+
+  if (!userEmail || !userEmail.includes("@")) {
+    console.error("Error: Valid email is required.");
+    process.exit(1);
+  }
+
+  console.log("\nCreating account...");
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/signup-with-invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ invite_code: code, email: userEmail }),
+    });
+
+    const data = (await response.json()) as {
+      error?: string;
+      api_key?: string;
+      user_id?: string;
+      email?: string;
+    };
+
+    if (!response.ok) {
+      console.error(`\nError: ${data.error || "Signup failed"}`);
+      process.exit(1);
+    }
+
+    if (!data.api_key || !data.user_id) {
+      console.error("\nError: Invalid response from server");
+      process.exit(1);
+    }
+
+    // Save config
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+
+    const config = {
+      supabaseUrl: SUPABASE_URL,
+      apiKey: data.api_key,
+      userId: data.user_id,
+      email: data.email,
+    };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+
+    console.log(`\n✅ Success! Account created for ${data.email}`);
+    console.log(`\n📁 Config saved to: ${CONFIG_FILE}`);
+    console.log(`\n🔑 Your API key: ${data.api_key}`);
+    console.log("\n⚠️  Save this key - it won't be shown again!");
+    console.log("\n" + "─".repeat(50));
+    console.log("\n📋 Next step: Configure Claude Desktop\n");
+    console.log("Add this to ~/.config/claude/claude_desktop_config.json:\n");
+    console.log(`{
+  "mcpServers": {
+    "arete": {
+      "command": "npx",
+      "args": ["arete-mcp-server"]
+    }
+  }
+}`);
+    console.log("\nThen restart Claude Desktop and ask: \"What do you know about me?\"\n");
+
+  } catch (error) {
+    console.error("\nError:", (error as Error).message);
+    process.exit(1);
+  }
+}
+
+// Parse command line arguments
+const args = process.argv.slice(2);
+const command = args[0];
+
+if (command === "setup") {
+  // Run setup flow
+  setup(args[1], args[2]).catch((error) => {
+    console.error("Setup failed:", error);
+    process.exit(1);
+  });
+} else if (command === "--help" || command === "-h") {
+  console.log(`
+arete-mcp-server - Portable AI identity for Claude Desktop
+
+Commands:
+  setup [invite-code] [email]   Sign up and configure Arete
+  --help, -h                    Show this help message
+
+Usage:
+  npx arete-mcp-server setup              Interactive setup
+  npx arete-mcp-server setup CODE EMAIL   Non-interactive setup
+  npx arete-mcp-server                    Start MCP server (after setup)
+
+Examples:
+  npx arete-mcp-server setup
+  npx arete-mcp-server setup ARETE-BETA-001 you@example.com
+`);
+  process.exit(0);
+} else {
+  // Start MCP server
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  main().catch(async (error) => {
+    console.error("Fatal error:", error);
+    await shutdownTelemetry();
+    process.exit(1);
+  });
+}

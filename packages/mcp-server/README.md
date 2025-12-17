@@ -5,23 +5,10 @@ MCP server for [Arete](https://github.com/gustavofjordao021/ai-collective-hackat
 ## Quick Start
 
 ```bash
-# Run directly (no install needed)
-npx arete-mcp-server
-```
+# 1. Sign up (get invite code from Arete team)
+npx arete-mcp-server setup
 
-## Claude Desktop Setup
-
-1. **Sign up for Arete** (get an invite code from the team):
-```bash
-npx arete-mcp-server  # First, make sure it works
-# Then sign up via CLI:
-git clone https://github.com/gustavofjordao021/ai-collective-hackaton-arete
-cd arete && npm install && npm run build
-npm run cli -- auth signup YOUR-INVITE-CODE your@email.com
-```
-
-2. **Configure Claude Desktop** (`~/.config/claude/claude_desktop_config.json`):
-```json
+# 2. Configure Claude Desktop (~/.config/claude/claude_desktop_config.json):
 {
   "mcpServers": {
     "arete": {
@@ -30,11 +17,22 @@ npm run cli -- auth signup YOUR-INVITE-CODE your@email.com
     }
   }
 }
+
+# 3. Restart Claude Desktop
+
+# 4. Ask Claude: "What do you know about me?"
 ```
 
-3. **Restart Claude Desktop**
+That's it. No repo cloning, no building.
 
-4. **Test it**: Ask Claude "What do you know about me?"
+## Commands
+
+```bash
+npx arete-mcp-server setup              # Interactive signup
+npx arete-mcp-server setup CODE EMAIL   # Non-interactive signup
+npx arete-mcp-server                    # Start MCP server
+npx arete-mcp-server --help             # Show help
+```
 
 ## Tools Provided
 
@@ -52,12 +50,16 @@ npm run cli -- auth signup YOUR-INVITE-CODE your@email.com
 
 ## How It Works
 
-Arete stores your identity locally (`~/.arete/`) and optionally syncs to the cloud. The MCP server exposes this identity to Claude Desktop, so Claude knows:
+Arete stores your identity locally (`~/.arete/`) and syncs to the cloud. The MCP server exposes this identity to Claude Desktop, so Claude knows:
 
 - Who you are (role, background)
 - What you're working on (current projects, focus areas)
 - Your preferences (communication style, tools you use)
 - Your expertise (skills, domains)
+
+## Get an Invite Code
+
+Request an invite code at: https://github.com/gustavofjordao021/ai-collective-hackaton-arete/issues
 
 ## License
 

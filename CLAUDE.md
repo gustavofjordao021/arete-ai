@@ -56,40 +56,31 @@ npm run build
 If you received an invite code from the Arete team:
 
 ```bash
-# 1. Clone and build
-git clone <repo-url> && cd arete
-npm install
-npm run build
+# 1. Sign up (no clone/build needed!)
+npx arete-mcp-server setup
+# Enter your invite code and email when prompted
 
-# 2. Sign up with your invite code
-npm run cli -- auth signup ARETE-BETA-XXX your-email@example.com
-
-# Output:
-# ✓ Success! Account created for your-email@example.com
-# Your API key: sk_live_abc123...
-# [!] Save this key - it won't be shown again!
-
-# 3. Verify it worked
-npm run cli -- identity get
-npm run cli -- context list
-```
-
-**For Claude Desktop MCP integration:**
-
-1. Add to `~/.config/claude/claude_desktop_config.json`:
-```json
+# 2. Configure Claude Desktop (~/.config/claude/claude_desktop_config.json):
 {
   "mcpServers": {
     "arete": {
-      "command": "node",
-      "args": ["/full/path/to/arete/packages/mcp-server/dist/index.js"]
+      "command": "npx",
+      "args": ["arete-mcp-server"]
     }
   }
 }
+
+# 3. Restart Claude Desktop
+
+# 4. Ask Claude: "What do you know about me?"
 ```
 
-2. Restart Claude Desktop
-3. Ask Claude: "What do you know about me?" — it should call `arete_get_identity`
+That's it — no repo cloning, no building. The `setup` command handles signup and saves your API key to `~/.arete/config.json`.
+
+**Alternative (non-interactive):**
+```bash
+npx arete-mcp-server setup ARETE-BETA-XXX your-email@example.com
+```
 
 ---
 
