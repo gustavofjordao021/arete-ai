@@ -14,9 +14,8 @@ import { getAnonymousUserId } from "./user-id.js";
 import type { TelemetryEvent } from "./events.js";
 
 // PostHog configuration
-// TODO: Set up PostHog project and update this key
 const POSTHOG_API_KEY =
-  process.env.POSTHOG_API_KEY || "phc_placeholder_replace_me";
+  process.env.POSTHOG_API_KEY || "phc_GI07Fsu3IL9XHO8ikfTHeaJri64agcn0WnlqfGeRmHK";
 const POSTHOG_HOST =
   process.env.POSTHOG_HOST || "https://us.i.posthog.com";
 
