@@ -113,6 +113,24 @@ packages/
 src/                # Chrome extension
 ```
 
+## FAQ
+
+**How is this different from ChatGPT memory / Claude memory?**
+
+Those memories are siloed. ChatGPT's memory only works in ChatGPT. Claude's memory only works in Claude. Switch tools and you start from zero. Arete is a *portable* identity layer — same you, everywhere. One identity that works across Claude, GPT, Cursor, and whatever comes next.
+
+**Privacy concerns?**
+
+Local-first by design. Your identity lives in `~/.arete/` on your machine. The MCP server runs locally — no data leaves your computer unless you opt into cloud sync (coming later, for multi-device). Code is open source, so you can audit exactly what's captured.
+
+**Why MCP?**
+
+MCP (Model Context Protocol) is Anthropic's standard for extending Claude. It's the fastest path to getting identity into Claude Desktop without hacks. As MCP adoption grows, Arete automatically works with any MCP-compatible tool. Distribution for free.
+
+**What's the business model?**
+
+Figuring it out. Right now we're focused on validating that portable identity actually makes AI better. The likely path: free local-first tier (what you see now), paid cloud sync for multi-device convenience. Similar to Obsidian's model.
+
 ## Get an Invite Code
 
 We're in private beta. Request access by [opening an issue](https://github.com/gustavofjordao021/arete-ai/issues).
