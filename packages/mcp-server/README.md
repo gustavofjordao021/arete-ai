@@ -1,6 +1,6 @@
 # arete-mcp-server
 
-MCP server for [Arete](https://github.com/gustavofjordao021/ai-collective-hackaton-arete) portable AI identity. Makes Claude Desktop remember who you are across conversations.
+MCP server for [Arete](https://github.com/gustavofjordao021/arete-ai) portable AI identity. Makes Claude Desktop remember who you are across conversations.
 
 ## Quick Start
 
@@ -84,7 +84,7 @@ Without this, you get tools but Claude won't proactively use them.
 
 ## Get an Invite Code
 
-Request an invite code at: https://github.com/gustavofjordao021/ai-collective-hackaton-arete/issues
+Request an invite code at: https://github.com/gustavofjordao021/arete-ai/issues
 
 ## License
 

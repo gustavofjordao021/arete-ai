@@ -686,7 +686,7 @@ async function setup(inviteCode?: string, email?: string) {
   let code = inviteCode;
   if (!code) {
     console.log("To sign up, you need an invite code from the Arete team.");
-    console.log("(Request one at: https://github.com/gustavofjordao021/ai-collective-hackaton-arete)\n");
+    console.log("(Request one at: https://github.com/gustavofjordao021/arete-ai)\n");
     code = await prompt("Invite code: ");
   }
 

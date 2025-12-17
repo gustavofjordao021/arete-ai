@@ -43,10 +43,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/gustavofjordao021/ai-collective-hackaton-arete"
+    "url": "https://github.com/gustavofjordao021/arete-ai"
   },
   "license": "MIT",
-  "author": "Gustavo Jordao <gustavo.jordao021@gmail.com>",
+  "author": "Gustavo Jordão <gustavo.jordao021@gmail.com>",
   "engines": {
     "node": ">=18"
   }
