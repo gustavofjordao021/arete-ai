@@ -27,7 +27,7 @@ Arete creates a portable identity layer that works across AI tools:
 ### For Claude Desktop Users
 
 ```bash
-# 1. Sign up (get invite code from maintainers)
+# 1. Sign up (just need your email)
 npx arete-mcp-server setup
 
 # 2. Add to Claude Desktop config (~/.config/claude/claude_desktop_config.json):
@@ -131,9 +131,9 @@ MCP (Model Context Protocol) is Anthropic's standard for extending Claude. It's 
 
 Figuring it out. Right now we're focused on validating that portable identity actually makes AI better. The likely path: free local-first tier (what you see now), paid cloud sync for multi-device convenience. Similar to Obsidian's model.
 
-## Get an Invite Code
+## Open Beta
 
-We're in private beta. Request access by [opening an issue](https://github.com/gustavofjordao021/arete-ai/issues).
+No invite code needed — just run `npx arete-mcp-server setup` and enter your email to get started.
 
 ## License
 

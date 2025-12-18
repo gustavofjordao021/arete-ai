@@ -641,7 +641,7 @@ async function shutdown(signal: string) {
 }
 
 // Setup command - inline signup for easy onboarding
-async function setup(inviteCode?: string, email?: string) {
+async function setup(email?: string) {
   const readline = await import("readline");
   const fs = await import("fs");
   const path = await import("path");
@@ -682,19 +682,6 @@ async function setup(inviteCode?: string, email?: string) {
     });
   };
 
-  // Get invite code
-  let code = inviteCode;
-  if (!code) {
-    console.log("To sign up, you need an invite code from the Arete team.");
-    console.log("(Request one at: https://github.com/gustavofjordao021/arete-ai)\n");
-    code = await prompt("Invite code: ");
-  }
-
-  if (!code) {
-    console.error("Error: Invite code is required.");
-    process.exit(1);
-  }
-
   // Get email
   let userEmail = email;
   if (!userEmail) {
@@ -709,10 +696,10 @@ async function setup(inviteCode?: string, email?: string) {
   console.log("\nCreating account...");
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/signup-with-invite`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/signup-open`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invite_code: code, email: userEmail }),
+      body: JSON.stringify({ email: userEmail }),
     });
 
     const data = (await response.json()) as {
@@ -774,7 +761,7 @@ const command = args[0];
 
 if (command === "setup") {
   // Run setup flow
-  setup(args[1], args[2]).catch((error) => {
+  setup(args[1]).catch((error) => {
     console.error("Setup failed:", error);
     process.exit(1);
   });
@@ -783,17 +770,17 @@ if (command === "setup") {
 arete-mcp-server - Portable AI identity for Claude Desktop
 
 Commands:
-  setup [invite-code] [email]   Sign up and configure Arete
-  --help, -h                    Show this help message
+  setup [email]   Sign up and configure Arete
+  --help, -h      Show this help message
 
 Usage:
-  npx arete-mcp-server setup              Interactive setup
-  npx arete-mcp-server setup CODE EMAIL   Non-interactive setup
+  npx arete-mcp-server setup              Interactive setup (prompts for email)
+  npx arete-mcp-server setup EMAIL        Non-interactive setup
   npx arete-mcp-server                    Start MCP server (after setup)
 
 Examples:
   npx arete-mcp-server setup
-  npx arete-mcp-server setup ARETE-BETA-001 you@example.com
+  npx arete-mcp-server setup you@example.com
 `);
   process.exit(0);
 } else {

@@ -5,7 +5,7 @@ MCP server for [Arete](https://github.com/gustavofjordao021/arete-ai) portable A
 ## Quick Start
 
 ```bash
-# 1. Sign up (get invite code from Arete team)
+# 1. Sign up (just need your email)
 npx arete-mcp-server setup
 
 # 2. Configure Claude Desktop (~/.config/claude/claude_desktop_config.json):
@@ -28,8 +28,8 @@ That's it. No repo cloning, no building.
 ## Commands
 
 ```bash
-npx arete-mcp-server setup              # Interactive signup
-npx arete-mcp-server setup CODE EMAIL   # Non-interactive signup
+npx arete-mcp-server setup              # Interactive signup (prompts for email)
+npx arete-mcp-server setup EMAIL        # Non-interactive signup
 npx arete-mcp-server                    # Start MCP server
 npx arete-mcp-server --help             # Show help
 ```
@@ -100,9 +100,9 @@ MCP (Model Context Protocol) is Anthropic's standard for extending Claude. It's 
 
 Figuring it out. Right now we're focused on validating that portable identity actually makes AI better. The likely path: free local-first tier (what you see now), paid cloud sync for multi-device convenience.
 
-## Get an Invite Code
+## Open Beta
 
-Request an invite code at: https://github.com/gustavofjordao021/arete-ai/issues
+No invite code needed — just run `npx arete-mcp-server setup` and enter your email.
 
 ## License
 
