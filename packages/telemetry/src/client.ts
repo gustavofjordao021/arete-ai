@@ -250,6 +250,51 @@ export class TelemetryClient {
     });
   }
 
+  // --- Setup Funnel Tracking ---
+
+  /**
+   * Track setup flow started
+   */
+  trackSetupStarted(interactive: boolean): void {
+    this.track({
+      event: "setup.started",
+      properties: { interactive },
+    });
+  }
+
+  /**
+   * Track email entered in setup
+   */
+  trackSetupEmailEntered(interactive: boolean): void {
+    this.track({
+      event: "setup.email_entered",
+      properties: { interactive },
+    });
+  }
+
+  /**
+   * Track setup completed successfully
+   */
+  trackSetupCompleted(durationMs: number): void {
+    this.track({
+      event: "setup.completed",
+      properties: { duration_ms: durationMs },
+    });
+  }
+
+  /**
+   * Track setup failure
+   */
+  trackSetupFailed(
+    errorType: "invalid_email" | "api_error" | "invalid_response" | "network_error" | "already_configured",
+    step: "email_prompt" | "api_call" | "config_save"
+  ): void {
+    this.track({
+      event: "setup.failed",
+      properties: { error_type: errorType, step: step },
+    });
+  }
+
   /**
    * Set user properties (for cohort analysis)
    */

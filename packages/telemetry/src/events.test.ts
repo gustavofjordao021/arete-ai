@@ -11,6 +11,11 @@ import {
   ContextEventAddedSchema,
   TelemetryEventSchema,
   EVENT_TYPES,
+  // Setup funnel events
+  SetupStartedEventSchema,
+  SetupEmailEnteredEventSchema,
+  SetupCompletedEventSchema,
+  SetupFailedEventSchema,
 } from "./events.js";
 
 describe("TelemetryEvent schemas", () => {
@@ -280,6 +285,123 @@ describe("TelemetryEvent schemas", () => {
       expect(EVENT_TYPES.CONTEXT_CALLED).toBe("projection.context_called");
       expect(EVENT_TYPES.FACT_SURFACED).toBe("projection.fact_surfaced");
       expect(EVENT_TYPES.EVENT_ADDED).toBe("context.event_added");
+    });
+
+    it("has setup funnel event types", () => {
+      expect(EVENT_TYPES.SETUP_STARTED).toBe("setup.started");
+      expect(EVENT_TYPES.SETUP_EMAIL_ENTERED).toBe("setup.email_entered");
+      expect(EVENT_TYPES.SETUP_COMPLETED).toBe("setup.completed");
+      expect(EVENT_TYPES.SETUP_FAILED).toBe("setup.failed");
+    });
+  });
+
+  // --- Setup Funnel Events ---
+
+  describe("SetupStartedEventSchema", () => {
+    it("validates setup.started event", () => {
+      const event = {
+        event: "setup.started",
+        properties: { interactive: true },
+      };
+      expect(() => SetupStartedEventSchema.parse(event)).not.toThrow();
+    });
+
+    it("validates non-interactive setup", () => {
+      const event = {
+        event: "setup.started",
+        properties: { interactive: false },
+      };
+      expect(() => SetupStartedEventSchema.parse(event)).not.toThrow();
+    });
+
+    it("rejects missing interactive flag", () => {
+      const event = {
+        event: "setup.started",
+        properties: {},
+      };
+      expect(() => SetupStartedEventSchema.parse(event)).toThrow();
+    });
+  });
+
+  describe("SetupEmailEnteredEventSchema", () => {
+    it("validates setup.email_entered event", () => {
+      const event = {
+        event: "setup.email_entered",
+        properties: { interactive: false },
+      };
+      expect(() => SetupEmailEnteredEventSchema.parse(event)).not.toThrow();
+    });
+  });
+
+  describe("SetupCompletedEventSchema", () => {
+    it("validates setup.completed event", () => {
+      const event = {
+        event: "setup.completed",
+        properties: { duration_ms: 2500 },
+      };
+      expect(() => SetupCompletedEventSchema.parse(event)).not.toThrow();
+    });
+
+    it("rejects missing duration_ms", () => {
+      const event = {
+        event: "setup.completed",
+        properties: {},
+      };
+      expect(() => SetupCompletedEventSchema.parse(event)).toThrow();
+    });
+  });
+
+  describe("SetupFailedEventSchema", () => {
+    it("validates setup.failed event", () => {
+      const event = {
+        event: "setup.failed",
+        properties: { error_type: "api_error", step: "api_call" },
+      };
+      expect(() => SetupFailedEventSchema.parse(event)).not.toThrow();
+    });
+
+    it("accepts all valid error types", () => {
+      const errorTypes = [
+        "invalid_email",
+        "api_error",
+        "invalid_response",
+        "network_error",
+        "already_configured",
+      ];
+      for (const errorType of errorTypes) {
+        const event = {
+          event: "setup.failed",
+          properties: { error_type: errorType, step: "api_call" },
+        };
+        expect(() => SetupFailedEventSchema.parse(event)).not.toThrow();
+      }
+    });
+
+    it("accepts all valid steps", () => {
+      const steps = ["email_prompt", "api_call", "config_save"];
+      for (const step of steps) {
+        const event = {
+          event: "setup.failed",
+          properties: { error_type: "api_error", step },
+        };
+        expect(() => SetupFailedEventSchema.parse(event)).not.toThrow();
+      }
+    });
+
+    it("rejects invalid error_type", () => {
+      const event = {
+        event: "setup.failed",
+        properties: { error_type: "unknown_error", step: "api_call" },
+      };
+      expect(() => SetupFailedEventSchema.parse(event)).toThrow();
+    });
+
+    it("rejects invalid step", () => {
+      const event = {
+        event: "setup.failed",
+        properties: { error_type: "api_error", step: "invalid_step" },
+      };
+      expect(() => SetupFailedEventSchema.parse(event)).toThrow();
     });
   });
 });

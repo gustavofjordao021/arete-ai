@@ -147,6 +147,51 @@ export const FactSurfacedEventSchema = z.object({
   }),
 });
 
+// --- Setup Funnel Events ---
+
+export const SetupErrorTypeSchema = z.enum([
+  "invalid_email",
+  "api_error",
+  "invalid_response",
+  "network_error",
+  "already_configured",
+]);
+
+export const SetupStepSchema = z.enum([
+  "email_prompt",
+  "api_call",
+  "config_save",
+]);
+
+export const SetupStartedEventSchema = z.object({
+  event: z.literal("setup.started"),
+  properties: z.object({
+    interactive: z.boolean(),
+  }),
+});
+
+export const SetupEmailEnteredEventSchema = z.object({
+  event: z.literal("setup.email_entered"),
+  properties: z.object({
+    interactive: z.boolean(),
+  }),
+});
+
+export const SetupCompletedEventSchema = z.object({
+  event: z.literal("setup.completed"),
+  properties: z.object({
+    duration_ms: z.number(),
+  }),
+});
+
+export const SetupFailedEventSchema = z.object({
+  event: z.literal("setup.failed"),
+  properties: z.object({
+    error_type: SetupErrorTypeSchema,
+    step: SetupStepSchema,
+  }),
+});
+
 // --- Context Flow Events ---
 
 export const ContextEventAddedSchema = z.object({
@@ -183,6 +228,11 @@ export const TelemetryEventSchema = z.discriminatedUnion("event", [
   FactSurfacedEventSchema,
   ContextEventAddedSchema,
   ContextEventsRetrievedSchema,
+  // Setup funnel events
+  SetupStartedEventSchema,
+  SetupEmailEnteredEventSchema,
+  SetupCompletedEventSchema,
+  SetupFailedEventSchema,
 ]);
 
 export type TelemetryEvent = z.infer<typeof TelemetryEventSchema>;
@@ -210,4 +260,9 @@ export const EVENT_TYPES = {
   // Context Flow
   EVENT_ADDED: "context.event_added",
   EVENTS_RETRIEVED: "context.events_retrieved",
+  // Setup Funnel
+  SETUP_STARTED: "setup.started",
+  SETUP_EMAIL_ENTERED: "setup.email_entered",
+  SETUP_COMPLETED: "setup.completed",
+  SETUP_FAILED: "setup.failed",
 } as const;

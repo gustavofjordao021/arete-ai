@@ -642,6 +642,9 @@ async function shutdown(signal: string) {
 
 // Setup command - inline signup for easy onboarding
 async function setup(email?: string) {
+  const startTime = Date.now();
+  const interactive = !email;
+
   const readline = await import("readline");
   const fs = await import("fs");
   const path = await import("path");
@@ -651,6 +654,9 @@ async function setup(email?: string) {
   const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
   const SUPABASE_URL = "https://dvjgxddjmevmmtzqmzrm.supabase.co";
 
+  // Track setup started
+  telemetry.trackSetupStarted(interactive);
+
   console.log("\n🔮 Arete MCP Server Setup\n");
 
   // Check if already configured
@@ -658,9 +664,11 @@ async function setup(email?: string) {
     try {
       const config = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf-8"));
       if (config.apiKey) {
+        telemetry.trackSetupFailed("already_configured", "email_prompt");
         console.log(`Already configured for: ${config.email || config.userId}`);
         console.log(`Config file: ${CONFIG_FILE}`);
         console.log("\nTo reconfigure, delete ~/.arete/config.json and run setup again.");
+        await shutdownTelemetry();
         process.exit(0);
       }
     } catch {
@@ -688,8 +696,13 @@ async function setup(email?: string) {
     userEmail = await prompt("Email: ");
   }
 
+  // Track email entered
+  telemetry.trackSetupEmailEntered(interactive);
+
   if (!userEmail || !userEmail.includes("@")) {
+    telemetry.trackSetupFailed("invalid_email", "email_prompt");
     console.error("Error: Valid email is required.");
+    await shutdownTelemetry();
     process.exit(1);
   }
 
@@ -710,12 +723,16 @@ async function setup(email?: string) {
     };
 
     if (!response.ok) {
+      telemetry.trackSetupFailed("api_error", "api_call");
       console.error(`\nError: ${data.error || "Signup failed"}`);
+      await shutdownTelemetry();
       process.exit(1);
     }
 
     if (!data.api_key || !data.user_id) {
+      telemetry.trackSetupFailed("invalid_response", "api_call");
       console.error("\nError: Invalid response from server");
+      await shutdownTelemetry();
       process.exit(1);
     }
 
@@ -731,6 +748,9 @@ async function setup(email?: string) {
       email: data.email,
     };
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+
+    // Track setup completed
+    telemetry.trackSetupCompleted(Date.now() - startTime);
 
     console.log(`\n✅ Success! Account created for ${data.email}`);
     console.log(`\n📁 Config saved to: ${CONFIG_FILE}`);
@@ -749,8 +769,13 @@ async function setup(email?: string) {
 }`);
     console.log("\nThen restart Claude Desktop and ask: \"What do you know about me?\"\n");
 
+    // Flush telemetry before exiting
+    await shutdownTelemetry();
+
   } catch (error) {
+    telemetry.trackSetupFailed("network_error", "api_call");
     console.error("\nError:", (error as Error).message);
+    await shutdownTelemetry();
     process.exit(1);
   }
 }

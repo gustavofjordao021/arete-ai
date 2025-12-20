@@ -228,4 +228,64 @@ describe("TelemetryClient", () => {
       expect(client1).not.toBe(client2);
     });
   });
+
+  describe("setup funnel tracking", () => {
+    it("tracks setup started (interactive)", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      expect(() => client.trackSetupStarted(true)).not.toThrow();
+    });
+
+    it("tracks setup started (non-interactive)", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      expect(() => client.trackSetupStarted(false)).not.toThrow();
+    });
+
+    it("tracks setup email entered", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      expect(() => client.trackSetupEmailEntered(true)).not.toThrow();
+    });
+
+    it("tracks setup completed with duration", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      expect(() => client.trackSetupCompleted(2500)).not.toThrow();
+    });
+
+    it("tracks setup failed with error type and step", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      expect(() => client.trackSetupFailed("api_error", "api_call")).not.toThrow();
+    });
+
+    it("tracks all error types", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      const errorTypes = [
+        "invalid_email",
+        "api_error",
+        "invalid_response",
+        "network_error",
+        "already_configured",
+      ] as const;
+      for (const errorType of errorTypes) {
+        expect(() => client.trackSetupFailed(errorType, "api_call")).not.toThrow();
+      }
+    });
+
+    it("tracks all steps", () => {
+      const client = new TelemetryClient({ forceUserId: "test-user" });
+      const steps = ["email_prompt", "api_call", "config_save"] as const;
+      for (const step of steps) {
+        expect(() => client.trackSetupFailed("api_error", step)).not.toThrow();
+      }
+    });
+
+    it("does not throw when disabled", () => {
+      const client = new TelemetryClient({
+        enabled: false,
+        forceUserId: "test-user",
+      });
+      expect(() => client.trackSetupStarted(true)).not.toThrow();
+      expect(() => client.trackSetupEmailEntered(false)).not.toThrow();
+      expect(() => client.trackSetupCompleted(1000)).not.toThrow();
+      expect(() => client.trackSetupFailed("network_error", "api_call")).not.toThrow();
+    });
+  });
 });
