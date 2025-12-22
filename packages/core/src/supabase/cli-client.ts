@@ -42,6 +42,7 @@ export interface CLIConfig {
   apiKey?: string;
   userId?: string;
   email?: string;
+  openaiKey?: string; // For semantic embeddings in arete_context
 }
 
 export interface CLIClientOptions {
@@ -97,17 +98,34 @@ function ensureConfigDir(): void {
 
 /**
  * Load CLI configuration
+ *
+ * Priority: Environment variables > config file
+ *
+ * Env vars:
+ * - ARETE_API_KEY or ARETE_API_KEY
+ * - SUPABASE_URL or VITE_SUPABASE_URL
+ * - OPENAI_API_KEY
  */
 export function loadConfig(): CLIConfig {
   ensureConfigDir();
-  if (!existsSync(CONFIG_FILE)) {
-    return {};
+
+  // Load from file first
+  let fileConfig: CLIConfig = {};
+  if (existsSync(CONFIG_FILE)) {
+    try {
+      fileConfig = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+    } catch {
+      // Ignore parse errors
+    }
   }
-  try {
-    return JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
-  } catch {
-    return {};
-  }
+
+  // Override with env vars (env takes precedence)
+  return {
+    ...fileConfig,
+    apiKey: process.env.ARETE_API_KEY || fileConfig.apiKey,
+    supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || fileConfig.supabaseUrl,
+    openaiKey: process.env.OPENAI_API_KEY || fileConfig.openaiKey,
+  };
 }
 
 /**

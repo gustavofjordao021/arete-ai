@@ -7,7 +7,7 @@
  * The "invisible" part: Returns guidance so Claude naturally knows how to present suggestions.
  */
 
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import {
@@ -27,7 +27,7 @@ import {
   type ReinforceAction,
   type DowngradeAction,
 } from "./inference-response.js";
-import { registerCandidates, type StoredCandidate } from "./candidate-registry.js";
+import { registerCandidates, getCandidate, removeCandidate, type StoredCandidate } from "./candidate-registry.js";
 
 // Configurable directory (for testing)
 let CONFIG_DIR = join(homedir(), ".arete");
@@ -590,6 +590,38 @@ function loadBlockedFacts(): BlockedFact[] {
   }
 }
 
+function saveBlockedFacts(blocked: BlockedFact[]): void {
+  const blockedFile = getBlockedFile();
+  writeFileSync(blockedFile, JSON.stringify(blocked, null, 2));
+}
+
+function loadIdentityV2ForUpdate(): IdentityV2 | null {
+  const identityFile = getIdentityFile();
+  if (!existsSync(identityFile)) {
+    return null;
+  }
+
+  try {
+    const data = readFileSync(identityFile, "utf-8");
+    const parsed = JSON.parse(data);
+    if (isIdentityV2(parsed)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveIdentityV2(identity: IdentityV2): void {
+  const identityFile = getIdentityFile();
+  const dir = join(CONFIG_DIR);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(identityFile, JSON.stringify(identity, null, 2));
+}
+
 // --- Pattern Analysis ---
 
 /**
@@ -816,6 +848,21 @@ async function performCrossTypeInference(
 
 export interface InferInput {
   lookbackDays?: number;
+  // Candidate management (processed before inference)
+  accept?: string[];  // Candidate IDs to accept
+  reject?: Array<{ id: string; reason?: string }>;  // Candidates to reject
+}
+
+export interface AcceptedCandidate {
+  id: string;
+  content: string;
+  category: string;
+}
+
+export interface RejectedCandidate {
+  id: string;
+  content: string;
+  reason?: string;
 }
 
 export interface InferOutput {
@@ -828,6 +875,9 @@ export interface InferOutput {
   // Cross-type inference results (Phase 4)
   reinforce: ReinforceAction[];
   downgrade: DowngradeAction[];
+  // Candidate management results
+  accepted?: AcceptedCandidate[];
+  rejected?: RejectedCandidate[];
 }
 
 export interface InferToolResult {
@@ -840,6 +890,83 @@ export interface InferToolResult {
  */
 export async function inferHandler(input: InferInput): Promise<InferToolResult> {
   const lookbackDays = input.lookbackDays ?? 7;
+  const { accept, reject } = input;
+
+  // Track accepted/rejected candidates for response
+  const accepted: AcceptedCandidate[] = [];
+  const rejected: RejectedCandidate[] = [];
+
+  // Process accept requests first
+  if (accept && accept.length > 0) {
+    const identity = loadIdentityV2ForUpdate();
+    if (identity) {
+      for (const candidateId of accept) {
+        const candidate = getCandidate(candidateId);
+        if (candidate) {
+          // Check for duplicates
+          const alreadyExists = identity.facts.some(
+            f => f.content.toLowerCase() === candidate.content.toLowerCase()
+          );
+          if (!alreadyExists) {
+            // Add fact to identity
+            const newFact = {
+              id: crypto.randomUUID(),
+              category: candidate.category,
+              content: candidate.content,
+              confidence: candidate.confidence,
+              lastValidated: new Date().toISOString(),
+              validationCount: 0,
+              maturity: "candidate" as const,
+              source: "inferred" as const,
+              sourceRef: candidate.sourceRef,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            identity.facts.push(newFact);
+            accepted.push({
+              id: candidate.id,
+              content: candidate.content,
+              category: candidate.category,
+            });
+            // Remove from candidate registry
+            removeCandidate(candidateId);
+          }
+        }
+      }
+      // Save identity if any were accepted
+      if (accepted.length > 0) {
+        saveIdentityV2(identity);
+      }
+    }
+  }
+
+  // Process reject requests
+  if (reject && reject.length > 0) {
+    const blockedFacts = loadBlockedFacts();
+    for (const { id, reason } of reject) {
+      const candidate = getCandidate(id);
+      if (candidate) {
+        // Add to blocked list
+        blockedFacts.push({
+          factId: id,
+          content: candidate.content,
+          reason: reason,
+          blockedAt: new Date().toISOString(),
+        });
+        rejected.push({
+          id: candidate.id,
+          content: candidate.content,
+          reason,
+        });
+        // Remove from candidate registry
+        removeCandidate(id);
+      }
+    }
+    // Save blocked list if any were rejected
+    if (rejected.length > 0) {
+      saveBlockedFacts(blockedFacts);
+    }
+  }
 
   // Load existing facts and blocked list to filter out
   const existingFacts = loadIdentityFacts();
@@ -1030,6 +1157,8 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
     guidance,
     reinforce,
     downgrade,
+    accepted: accepted.length > 0 ? accepted : undefined,
+    rejected: rejected.length > 0 ? rejected : undefined,
   };
 
   return {
@@ -1043,23 +1172,45 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
  */
 export const inferTool = {
   name: "arete_infer",
-  description: `Extract candidate identity facts from recent browsing patterns.
+  description: `Learn from browsing patterns + manage candidate lifecycle.
 
-Analyzes local context to find patterns that might indicate user expertise.
-Returns candidates for user approval - they are NOT automatically added.
+**Analysis:**
+Extracts candidate facts from recent activity. Returns candidates for user approval.
 
-Use this when:
-- User asks what they've been working on
-- Starting a conversation where context would help
-- User wants to update their identity based on recent activity
+**Candidate Management:**
+Accept or reject candidates inline (no separate tool calls needed).
+- accept: Pass candidate IDs to confirm as facts
+- reject: Pass {id, reason} to block candidates permanently
 
-The response includes guidance on how to naturally present the suggestions.`,
+**Usage:**
+- "What have I been up to?" → arete_infer() to analyze
+- User confirms candidate → arete_infer(accept: ["id1"])
+- User declines → arete_infer(reject: [{id: "id2", reason: "Not accurate"}])
+
+Replaces: arete_accept_candidate, arete_accept_candidates, arete_reject_fact`,
   inputSchema: {
     type: "object",
     properties: {
       lookbackDays: {
         type: "number",
         description: "How many days of context to analyze (default: 7)",
+      },
+      accept: {
+        type: "array",
+        items: { type: "string" },
+        description: "Candidate IDs to accept (promotes to facts)",
+      },
+      reject: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            id: { type: "string" },
+            reason: { type: "string" },
+          },
+          required: ["id"],
+        },
+        description: "Candidates to reject (blocked permanently)",
       },
     },
   },
