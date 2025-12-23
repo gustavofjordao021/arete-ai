@@ -1,6 +1,12 @@
 # arete-mcp-server
 
-MCP server for [Arete](https://github.com/gustavofjordao021/arete-ai) portable AI identity. Makes Claude Desktop remember who you are across conversations.
+OpenIdentity-compatible MCP server for Claude Desktop. Makes Claude remember who you are — across conversations, across tools.
+
+## What is OpenIdentity?
+
+[OpenIdentity](https://github.com/gustavofjordao021/arete-ai/blob/main/OPENIDENTITY.md) is a portable identity protocol for AI. One schema that works across Claude, GPT, Cursor, and any AI tool.
+
+Arete is the reference implementation.
 
 ## Quick Start
 
@@ -28,7 +34,7 @@ That's it. No repo cloning, no building.
 ## Commands
 
 ```bash
-npx arete-mcp-server setup              # Interactive signup (prompts for email)
+npx arete-mcp-server setup              # Interactive signup
 npx arete-mcp-server setup EMAIL        # Non-interactive signup
 npx arete-mcp-server                    # Start MCP server
 npx arete-mcp-server --help             # Show help
@@ -45,7 +51,7 @@ npx arete-mcp-server --help             # Show help
 
 ## How It Works
 
-Arete stores your identity locally (`~/.arete/`) and syncs to the cloud. The MCP server exposes this identity to Claude Desktop, so Claude knows:
+Your identity is stored locally (`~/.arete/`) in OpenIdentity format. The MCP server exposes it to Claude Desktop, so Claude knows:
 
 - Who you are (role, background)
 - What you're working on (current projects, focus areas)
@@ -54,7 +60,7 @@ Arete stores your identity locally (`~/.arete/`) and syncs to the cloud. The MCP
 
 ## Export & Import
 
-Backup or transfer your identity using OpenIdentity format:
+Your identity is portable. Backup, transfer, or share:
 
 ```bash
 # Export your identity
@@ -63,13 +69,19 @@ arete identity export --format oi > my-identity.oi
 # Export only public facts (for sharing)
 arete identity export --format oi --visibility public > public.oi
 
-# Import from backup
+# Import from backup or another tool
 arete identity import ./my-identity.oi
 ```
 
 ### Privacy Tiers
 
-Facts have visibility levels: `public` (any AI), `trusted` (authorized apps), `local` (never leaves device).
+Facts have visibility levels you control:
+
+| Tier | Description |
+|------|-------------|
+| `public` | Safe for any AI tool |
+| `trusted` | Only authorized apps (default) |
+| `local` | Never leaves device |
 
 ## Recommended: System Prompt
 
@@ -98,21 +110,21 @@ Without this, you get tools but Claude won't proactively use them.
 
 ## FAQ
 
-**How is this different from ChatGPT memory / Claude memory?**
+**How is this different from ChatGPT/Claude memory?**
 
-Those memories are siloed. ChatGPT's memory only works in ChatGPT. Claude's memory only works in Claude. Switch tools and you start from zero. Arete is a *portable* identity layer — same you, everywhere. One identity that works across Claude, GPT, Cursor, and whatever comes next.
+Those memories are siloed. OpenIdentity is the protocol that connects them — same you, everywhere. One identity that works across Claude, GPT, Cursor, and whatever comes next.
 
 **Privacy concerns?**
 
-Local-first by design. Your identity lives in `~/.arete/` on your machine. The MCP server runs locally — no data leaves your computer unless you opt into cloud sync (coming later, for multi-device). Code is open source, so you can audit exactly what's captured.
+Local-first by design. Your identity lives in `~/.arete/` on your machine. Code is open source. You control visibility tiers.
 
 **Why MCP?**
 
-MCP (Model Context Protocol) is Anthropic's standard for extending Claude. It's the fastest path to getting identity into Claude Desktop without hacks. As MCP adoption grows, Arete automatically works with any MCP-compatible tool.
+MCP (Model Context Protocol) is Anthropic's standard for extending Claude. As MCP adoption grows, OpenIdentity automatically works with any MCP-compatible tool.
 
-**What's the business model?**
+## Specification
 
-Figuring it out. Right now we're focused on validating that portable identity actually makes AI better. The likely path: free local-first tier (what you see now), paid cloud sync for multi-device convenience.
+Full protocol spec: [OPENIDENTITY.md](https://github.com/gustavofjordao021/arete-ai/blob/main/OPENIDENTITY.md)
 
 ## Open Beta
 
