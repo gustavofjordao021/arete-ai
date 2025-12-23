@@ -56,7 +56,7 @@ function ensureArchiveDir(): void {
 /**
  * Load identity from file
  */
-function loadIdentityV2(): IdentityV2 | null {
+export function loadIdentityV2(): IdentityV2 | null {
   const identityPath = join(configDir, "identity.json");
   if (!existsSync(identityPath)) {
     return null;
@@ -76,7 +76,7 @@ function loadIdentityV2(): IdentityV2 | null {
 /**
  * Save identity to file
  */
-function saveIdentityV2(identity: IdentityV2): void {
+export function saveIdentityV2(identity: IdentityV2): void {
   const identityPath = join(configDir, "identity.json");
   if (!existsSync(configDir)) {
     mkdirSync(configDir, { recursive: true });

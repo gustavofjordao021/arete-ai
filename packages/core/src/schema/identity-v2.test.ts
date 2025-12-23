@@ -14,8 +14,10 @@ import {
   getEffectiveConfidence,
   validateFact,
   isIdentityV2,
+  filterFactsByVisibility,
   type IdentityFact,
   type IdentityV2,
+  type Visibility,
 } from "./identity-v2.js";
 import type { AreteIdentity } from "./identity.js";
 
@@ -29,6 +31,7 @@ describe("IdentityFact Schema", () => {
       lastValidated: new Date().toISOString(),
       validationCount: 2,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -446,6 +449,7 @@ describe("getEffectiveConfidence", () => {
       lastValidated: sixtyDaysAgo.toISOString(),
       validationCount: 1,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: sixtyDaysAgo.toISOString(),
       updatedAt: sixtyDaysAgo.toISOString(),
@@ -465,6 +469,7 @@ describe("getEffectiveConfidence", () => {
       lastValidated: oneHundredTwentyDaysAgo.toISOString(),
       validationCount: 1,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: oneHundredTwentyDaysAgo.toISOString(),
       updatedAt: oneHundredTwentyDaysAgo.toISOString(),
@@ -484,6 +489,7 @@ describe("getEffectiveConfidence", () => {
       lastValidated: thirtyDaysAgo.toISOString(),
       validationCount: 1,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: thirtyDaysAgo.toISOString(),
       updatedAt: thirtyDaysAgo.toISOString(),
@@ -504,6 +510,7 @@ describe("getEffectiveConfidence", () => {
       lastValidated: sixtyDaysAgo.toISOString(),
       validationCount: 1,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: sixtyDaysAgo.toISOString(),
       updatedAt: sixtyDaysAgo.toISOString(),
@@ -538,6 +545,7 @@ describe("validateFact", () => {
       lastValidated: new Date().toISOString(),
       validationCount: 0,
       maturity: "candidate",
+      visibility: "trusted",
       source: "inferred",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -556,6 +564,7 @@ describe("validateFact", () => {
       lastValidated: new Date().toISOString(),
       validationCount: 1,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -575,6 +584,7 @@ describe("validateFact", () => {
       lastValidated: oldDate,
       validationCount: 1,
       maturity: "established",
+      visibility: "trusted",
       source: "manual",
       createdAt: oldDate,
       updatedAt: oldDate,
@@ -627,6 +637,7 @@ describe("validateFact", () => {
       lastValidated: new Date().toISOString(),
       validationCount: 10,
       maturity: "proven",
+      visibility: "trusted",
       source: "manual",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -634,5 +645,123 @@ describe("validateFact", () => {
 
     const validated = validateFact(fact);
     expect(validated.maturity).toBe("proven");
+  });
+});
+
+// ============================================================================
+// VISIBILITY (PRIVACY TIERS) TESTS - TDD RED PHASE
+// ============================================================================
+
+describe("IdentityFact visibility", () => {
+  const baseFact = {
+    id: "fact-123",
+    category: "expertise" as const,
+    content: "TypeScript",
+    confidence: 0.8,
+    lastValidated: new Date().toISOString(),
+    validationCount: 1,
+    maturity: "established" as const,
+    source: "manual" as const,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  it("accepts valid visibility values", () => {
+    const validVisibilities = ["public", "trusted", "local"];
+
+    for (const visibility of validVisibilities) {
+      const fact = { ...baseFact, visibility };
+      expect(IdentityFactSchema.safeParse(fact).success).toBe(true);
+    }
+  });
+
+  it("rejects invalid visibility values", () => {
+    const fact = { ...baseFact, visibility: "invalid" };
+    expect(IdentityFactSchema.safeParse(fact).success).toBe(false);
+  });
+
+  it("defaults visibility to trusted when not provided", () => {
+    // Fact without visibility should still parse (with default)
+    const result = IdentityFactSchema.safeParse(baseFact);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.visibility).toBe("trusted");
+    }
+  });
+});
+
+describe("createIdentityFact visibility", () => {
+  it("defaults visibility to trusted", () => {
+    const fact = createIdentityFact({
+      category: "expertise",
+      content: "TypeScript",
+    });
+    expect(fact.visibility).toBe("trusted");
+  });
+
+  it("allows explicit visibility override to public", () => {
+    const fact = createIdentityFact({
+      category: "core",
+      content: "Name is Alex",
+      visibility: "public",
+    });
+    expect(fact.visibility).toBe("public");
+  });
+
+  it("allows explicit visibility override to local", () => {
+    const fact = createIdentityFact({
+      category: "context",
+      content: "Salary information",
+      visibility: "local",
+    });
+    expect(fact.visibility).toBe("local");
+  });
+});
+
+describe("filterFactsByVisibility", () => {
+  const createFactWithVisibility = (content: string, visibility: Visibility) =>
+    createIdentityFact({ category: "expertise", content, visibility });
+
+  const createTestFacts = () => [
+    createFactWithVisibility("public fact", "public"),
+    createFactWithVisibility("trusted fact", "trusted"),
+    createFactWithVisibility("local fact", "local"),
+  ];
+
+  it("returns only public facts for public filter", () => {
+    const testFacts = createTestFacts();
+    const filtered = filterFactsByVisibility(testFacts, "public");
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].content).toBe("public fact");
+  });
+
+  it("returns public + trusted facts for trusted filter", () => {
+    const testFacts = createTestFacts();
+    const filtered = filterFactsByVisibility(testFacts, "trusted");
+    expect(filtered).toHaveLength(2);
+    expect(filtered.map(f => f.content)).toContain("public fact");
+    expect(filtered.map(f => f.content)).toContain("trusted fact");
+    expect(filtered.map(f => f.content)).not.toContain("local fact");
+  });
+
+  it("returns all facts for local filter", () => {
+    const testFacts = createTestFacts();
+    const filtered = filterFactsByVisibility(testFacts, "local");
+    expect(filtered).toHaveLength(3);
+  });
+
+  it("handles empty facts array", () => {
+    const filtered = filterFactsByVisibility([], "public");
+    expect(filtered).toEqual([]);
+  });
+
+  it("handles facts without explicit visibility (defaults to trusted)", () => {
+    const factWithoutVisibility = createIdentityFact({
+      category: "expertise",
+      content: "no visibility set",
+    });
+    // Should be included in trusted filter (default visibility)
+    const filtered = filterFactsByVisibility([factWithoutVisibility], "trusted");
+    expect(filtered).toHaveLength(1);
   });
 });

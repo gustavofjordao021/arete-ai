@@ -92,6 +92,8 @@ Arete stores structured facts about you:
 | Chrome Extension | ✅ Beta |
 | Automatic context capture | ✅ Live |
 | Local-first storage | ✅ Live |
+| OpenIdentity export/import | ✅ Live |
+| Privacy tiers (public/trusted/local) | ✅ Live |
 | Cloud sync | 🚧 Coming |
 | GPT/OpenAI integration | 🚧 Planned |
 | API for custom integrations | 🚧 Planned |
@@ -101,6 +103,37 @@ Arete stores structured facts about you:
 | Package | Description | npm |
 |---------|-------------|-----|
 | `arete-mcp-server` | MCP server for Claude Desktop | [![npm](https://img.shields.io/npm/v/arete-mcp-server)](https://www.npmjs.com/package/arete-mcp-server) |
+
+## CLI Commands
+
+```bash
+# Identity management
+arete identity get                    # Show current identity
+arete identity set "I'm a PM..."      # Store identity from prose
+arete identity transform --model X    # Output system prompt (claude|openai)
+arete identity archive                # Archive expired facts
+
+# Export/Import (OpenIdentity format)
+arete identity export --format oi > identity.oi          # Export all facts
+arete identity export --format oi --visibility public    # Export public facts only
+arete identity import ./backup.oi                        # Import from file
+
+# Context
+arete context list                    # Show recent activity
+arete context list --type page_visit  # Filter by type
+```
+
+### Privacy Tiers
+
+Facts can have different visibility levels:
+
+| Tier | Description |
+|------|-------------|
+| `public` | Safe for any AI tool |
+| `trusted` | Only authorized apps (default) |
+| `local` | Never leaves device |
+
+Use `--visibility` flag with export to filter facts by privacy tier.
 
 ## Project Structure
 

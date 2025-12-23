@@ -52,6 +52,25 @@ Arete stores your identity locally (`~/.arete/`) and syncs to the cloud. The MCP
 - Your preferences (communication style, tools you use)
 - Your expertise (skills, domains)
 
+## Export & Import
+
+Backup or transfer your identity using OpenIdentity format:
+
+```bash
+# Export your identity
+arete identity export --format oi > my-identity.oi
+
+# Export only public facts (for sharing)
+arete identity export --format oi --visibility public > public.oi
+
+# Import from backup
+arete identity import ./my-identity.oi
+```
+
+### Privacy Tiers
+
+Facts have visibility levels: `public` (any AI), `trusted` (authorized apps), `local` (never leaves device).
+
 ## Recommended: System Prompt
 
 For Claude to **automatically** capture context (not just respond to manual tool calls), add this to your Claude Desktop system prompt:

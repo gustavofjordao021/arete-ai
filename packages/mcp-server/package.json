@@ -41,7 +41,11 @@
     "identity",
     "ai",
     "context",
-    "memory"
+    "memory",
+    "openidentity",
+    "portable",
+    "export",
+    "privacy"
   ],
   "repository": {
     "type": "git",

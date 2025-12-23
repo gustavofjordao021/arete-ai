@@ -45,9 +45,21 @@ export const FactSourceSchema = z.enum([
   "manual",       // User directly entered
   "inferred",     // Extracted from context patterns
   "conversation", // Learned during AI conversation
+  "imported",     // Imported from external source (OpenIdentity, ChatGPT, etc.)
 ]);
 
 export type FactSource = z.infer<typeof FactSourceSchema>;
+
+/**
+ * Visibility (privacy tier) of a fact
+ */
+export const VisibilitySchema = z.enum([
+  "public",   // Safe to share with any AI tool
+  "trusted",  // Only authorized apps (default)
+  "local",    // Never leaves device, never syncs to cloud
+]);
+
+export type Visibility = z.infer<typeof VisibilitySchema>;
 
 /**
  * Individual identity fact with confidence tracking
@@ -62,6 +74,9 @@ export const IdentityFactSchema = z.object({
   lastValidated: z.string(), // ISO timestamp
   validationCount: z.number().int().min(0),
   maturity: MaturitySchema,
+
+  // Privacy
+  visibility: VisibilitySchema.default("trusted"),
 
   // Provenance
   source: FactSourceSchema,
@@ -122,6 +137,7 @@ export function createIdentityFact(input: {
   content: string;
   source?: FactSource;
   confidence?: number;
+  visibility?: Visibility;
   sourceRef?: string;
 }): IdentityFact {
   const now = new Date().toISOString();
@@ -136,6 +152,7 @@ export function createIdentityFact(input: {
     lastValidated: now,
     validationCount: isManual ? 1 : 0,
     maturity: isManual ? "established" : "candidate",
+    visibility: input.visibility ?? "trusted",
     source,
     sourceRef: input.sourceRef,
     createdAt: now,
@@ -221,6 +238,31 @@ export function validateFact(fact: IdentityFact): IdentityFact {
 }
 
 /**
+ * Filter facts by visibility tier
+ *
+ * Visibility levels (ordered from most to least restrictive):
+ * - "public" (0): Returns only public facts
+ * - "trusted" (1): Returns public + trusted facts
+ * - "local" (2): Returns all facts including local
+ */
+export function filterFactsByVisibility(
+  facts: IdentityFact[],
+  maxVisibility: Visibility
+): IdentityFact[] {
+  const levels: Record<Visibility, number> = {
+    public: 0,
+    trusted: 1,
+    local: 2,
+  };
+  const maxLevel = levels[maxVisibility];
+
+  return facts.filter((f) => {
+    const factVisibility = f.visibility ?? "trusted";
+    return levels[factVisibility] <= maxLevel;
+  });
+}
+
+/**
  * Migrate v1 identity to v2 format
  */
 export function migrateV1ToV2(v1: AreteIdentity): IdentityV2 {
@@ -239,6 +281,7 @@ export function migrateV1ToV2(v1: AreteIdentity): IdentityV2 {
     lastValidated: now,
     validationCount: 5, // Proven status
     maturity: "proven",
+    visibility: "trusted", // Default visibility for migrated facts
     source: "manual",
     createdAt: v1.meta.lastModified,
     updatedAt: now,

@@ -30,6 +30,13 @@ import {
   type AreteIdentity,
 } from "../index.js";
 import {
+  exportToOpenIdentity,
+  importFromOpenIdentity,
+  importFromChatGPT,
+  type Visibility,
+} from "../interchange/index.js";
+import { type IdentityV2 } from "../schema/identity-v2.js";
+import {
   listContextEvents,
   clearContextStore,
   formatContextList,
@@ -53,6 +60,8 @@ import {
   runArchiveCleanup,
   setConfigDir,
   getArchiveDir,
+  loadIdentityV2,
+  saveIdentityV2,
 } from "../archive/index.js";
 
 // Storage location
@@ -362,6 +371,9 @@ Identity:
   arete identity clear                  Clear stored identity
   arete identity json                   Output raw JSON
   arete identity archive                Archive expired facts (confidence < 0.1)
+  arete identity export --format oi     Export to OpenIdentity format
+  arete identity import <file.oi>       Import from OpenIdentity file
+  arete identity import-chatgpt "..."   Import from ChatGPT instructions
 
 Context:
   arete context list                    Show recent context events
@@ -370,10 +382,16 @@ Context:
   arete context clear                   Clear all context
   arete context import <file>           Import from Chrome extension
 
+Export Options:
+  --format oi                           OpenIdentity format (default)
+  --visibility public|trusted|local     Filter by privacy tier (default: trusted)
+
 Examples:
   arete auth login
   arete identity set "I'm a PM at fintech, prefer concise responses"
   arete identity transform --model claude
+  arete identity export --format oi --visibility public > public.oi
+  arete identity import ./backup.oi
   arete context list --type page_visit --limit 5
 `);
 }
@@ -405,6 +423,116 @@ async function cmdArchive(threshold?: number): Promise<void> {
     console.log(`Archive file: ${result.archivePath}`);
   }
   console.log(`\nArchive directory: ${getArchiveDir()}`);
+}
+
+/**
+ * Export identity to OpenIdentity format
+ */
+async function cmdExport(format: string, visibility?: Visibility): Promise<void> {
+  if (format !== "oi" && format !== "openidentity") {
+    console.error(`Unknown format: ${format}. Use 'oi' or 'openidentity'.`);
+    process.exit(1);
+  }
+
+  // Ensure we use the right config dir for loading
+  setConfigDir(CONFIG_DIR);
+
+  // Load identity from local storage (v2 format)
+  const identityV2 = loadIdentityV2();
+
+  if (!identityV2 || identityV2.facts.length === 0) {
+    console.error("No identity facts to export.");
+    console.error("Use 'arete identity set' or the MCP server to add facts first.");
+    process.exit(1);
+  }
+
+  const exported = exportToOpenIdentity(identityV2, {
+    visibility: visibility ?? "trusted",
+  });
+
+  console.log(JSON.stringify(exported, null, 2));
+}
+
+/**
+ * Import identity from OpenIdentity file
+ */
+async function cmdImportOI(filePath: string): Promise<void> {
+  if (!filePath) {
+    console.error("Usage: arete identity import <file.oi>");
+    process.exit(1);
+  }
+
+  if (!existsSync(filePath)) {
+    console.error(`File not found: ${filePath}`);
+    process.exit(1);
+  }
+
+  let data: unknown;
+  try {
+    const content = readFileSync(filePath, "utf-8");
+    data = JSON.parse(content);
+  } catch (err) {
+    console.error(`Failed to parse file: ${(err as Error).message}`);
+    process.exit(1);
+  }
+
+  const result = importFromOpenIdentity(data);
+
+  if (!result.success || !result.identity) {
+    console.error(`Import failed: ${result.error ?? "Unknown error"}`);
+    process.exit(1);
+  }
+
+  const importedIdentity = result.identity;
+
+  // Ensure we use the right config dir
+  setConfigDir(CONFIG_DIR);
+
+  // Merge with existing identity or create new
+  let existing = loadIdentityV2();
+  if (!existing) {
+    existing = importedIdentity;
+  } else {
+    // Merge facts (avoid duplicates by content)
+    const existingContents = new Set(existing.facts.map((f) => f.content));
+    const newFacts = importedIdentity.facts.filter(
+      (f) => !existingContents.has(f.content)
+    );
+    existing.facts.push(...newFacts);
+
+    // Merge core if empty
+    if (!existing.core.name && importedIdentity.core.name) {
+      existing.core.name = importedIdentity.core.name;
+    }
+    if (!existing.core.role && importedIdentity.core.role) {
+      existing.core.role = importedIdentity.core.role;
+    }
+  }
+
+  saveIdentityV2(existing);
+
+  console.log(`Imported ${importedIdentity.facts.length} fact(s) from OpenIdentity file.`);
+  if (importedIdentity.core.name || importedIdentity.core.role) {
+    console.log(`Core: ${importedIdentity.core.name || ""} ${importedIdentity.core.role ? `(${importedIdentity.core.role})` : ""}`);
+  }
+}
+
+/**
+ * Import identity from ChatGPT custom instructions
+ */
+async function cmdImportChatGPT(instructions: string): Promise<void> {
+  if (!instructions) {
+    console.error('Usage: arete identity import-chatgpt "your custom instructions"');
+    console.error("       arete identity import-chatgpt --file ~/instructions.txt");
+    process.exit(1);
+  }
+
+  // Note: Full LLM extraction requires an API key and provider
+  // For CLI, we output a message about needing LLM integration
+  console.error("Note: ChatGPT import requires LLM extraction.");
+  console.error("This feature is available via the Chrome extension or MCP server.");
+  console.error("\nTo use via MCP, the arete_remember tool can process instructions.");
+  process.exit(1);
 }
 
 // Parse arguments
@@ -483,6 +611,29 @@ if (command === "auth") {
       });
       break;
     }
+    case "export": {
+      const formatIdx = args.indexOf("--format");
+      const format = formatIdx !== -1 ? args[formatIdx + 1] : "oi";
+      const visIdx = args.indexOf("--visibility");
+      const visibility = visIdx !== -1 ? (args[visIdx + 1] as Visibility) : undefined;
+      cmdExport(format, visibility).catch((e) => {
+        console.error("Error:", e.message);
+        process.exit(1);
+      });
+      break;
+    }
+    case "import":
+      cmdImportOI(args[2]).catch((e) => {
+        console.error("Import failed:", e.message);
+        process.exit(1);
+      });
+      break;
+    case "import-chatgpt":
+      cmdImportChatGPT(args.slice(2).join(" ")).catch((e) => {
+        console.error("Import failed:", e.message);
+        process.exit(1);
+      });
+      break;
     default:
       cmdHelp();
   }
