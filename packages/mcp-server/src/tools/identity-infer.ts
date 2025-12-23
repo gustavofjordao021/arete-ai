@@ -917,6 +917,7 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
               lastValidated: new Date().toISOString(),
               validationCount: 0,
               maturity: "candidate" as const,
+              visibility: "trusted" as const,
               source: "inferred" as const,
               sourceRef: candidate.sourceRef,
               createdAt: new Date().toISOString(),
