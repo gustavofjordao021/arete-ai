@@ -243,6 +243,119 @@ describe("arete_infer accept/reject extension", () => {
       expect(result.structuredContent.candidates).toBeDefined();
     });
   });
+
+  describe("cloud sync on accept", () => {
+    it("syncs identity to cloud after accepting candidates", async () => {
+      // Setup: Mock cloud client with config
+      const mockSaveIdentity = vi.fn().mockResolvedValue(undefined);
+      const { createCLIClient, loadConfig } = await import("@arete/core");
+      vi.mocked(loadConfig).mockReturnValue({
+        apiKey: "test-key",
+        supabaseUrl: "https://test.supabase.co",
+      });
+      vi.mocked(createCLIClient).mockReturnValue({
+        saveIdentity: mockSaveIdentity,
+        getIdentity: vi.fn(),
+        getRecentContext: vi.fn(),
+        addContextEvent: vi.fn(),
+        clearContext: vi.fn(),
+        validateKey: vi.fn(),
+      } as any);
+
+      const identity = createTestIdentity([]);
+      writeIdentity(testDir, identity);
+
+      // Register a candidate
+      registerCandidates([{
+        id: "cand-cloud-1",
+        category: "expertise",
+        content: "Cloud sync expert",
+        confidence: 0.7,
+        sourceRef: "test",
+        signals: ["test"],
+        createdAt: new Date().toISOString(),
+      }]);
+
+      // Accept the candidate
+      const result = await inferHandler({
+        accept: ["cand-cloud-1"],
+      });
+
+      // Assert: Cloud sync was called
+      expect(mockSaveIdentity).toHaveBeenCalledTimes(1);
+      expect(result.structuredContent.accepted?.length).toBe(1);
+    });
+
+    it("continues if cloud sync fails (offline-first)", async () => {
+      const mockSaveIdentity = vi.fn().mockRejectedValue(new Error("Network error"));
+      const { createCLIClient, loadConfig } = await import("@arete/core");
+      vi.mocked(loadConfig).mockReturnValue({
+        apiKey: "test-key",
+        supabaseUrl: "https://test.supabase.co",
+      });
+      vi.mocked(createCLIClient).mockReturnValue({
+        saveIdentity: mockSaveIdentity,
+        getIdentity: vi.fn(),
+        getRecentContext: vi.fn(),
+        addContextEvent: vi.fn(),
+        clearContext: vi.fn(),
+        validateKey: vi.fn(),
+      } as any);
+
+      const identity = createTestIdentity([]);
+      writeIdentity(testDir, identity);
+
+      registerCandidates([{
+        id: "cand-cloud-2",
+        category: "expertise",
+        content: "Offline first test",
+        confidence: 0.7,
+        sourceRef: "test",
+        signals: ["test"],
+        createdAt: new Date().toISOString(),
+      }]);
+
+      const result = await inferHandler({
+        accept: ["cand-cloud-2"],
+      });
+
+      // Assert: Operation succeeded despite cloud failure
+      expect(result.structuredContent.success).toBe(true);
+      expect(result.structuredContent.accepted?.length).toBe(1);
+
+      // Verify local save still happened
+      const updatedIdentity = readIdentity(testDir);
+      expect(updatedIdentity.facts.some((f: any) => f.content === "Offline first test")).toBe(true);
+    });
+
+    it("skips cloud sync when no candidates accepted", async () => {
+      const mockSaveIdentity = vi.fn();
+      const { createCLIClient, loadConfig } = await import("@arete/core");
+      vi.mocked(loadConfig).mockReturnValue({
+        apiKey: "test-key",
+        supabaseUrl: "https://test.supabase.co",
+      });
+      vi.mocked(createCLIClient).mockReturnValue({
+        saveIdentity: mockSaveIdentity,
+        getIdentity: vi.fn(),
+        getRecentContext: vi.fn(),
+        addContextEvent: vi.fn(),
+        clearContext: vi.fn(),
+        validateKey: vi.fn(),
+      } as any);
+
+      const identity = createTestIdentity([]);
+      writeIdentity(testDir, identity);
+
+      // Accept non-existent candidate
+      const result = await inferHandler({
+        accept: ["nonexistent"],
+      });
+
+      // Assert: No cloud sync call (nothing was accepted)
+      expect(mockSaveIdentity).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // --- Test Helpers ---

@@ -936,6 +936,16 @@ export async function inferHandler(input: InferInput): Promise<InferToolResult> 
       // Save identity if any were accepted
       if (accepted.length > 0) {
         saveIdentityV2(identity);
+
+        // Sync to cloud (best effort, offline-first)
+        const client = getCloudClient();
+        if (client) {
+          try {
+            await client.saveIdentity(identity as any);
+          } catch (err) {
+            console.error("Cloud sync failed:", err);
+          }
+        }
       }
     }
   }
