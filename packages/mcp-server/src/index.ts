@@ -423,6 +423,139 @@ async function shutdown(signal: string) {
   process.exit(0);
 }
 
+// Claude Code hooks installation
+async function installClaudeCodeHooks(
+  fs: typeof import("fs"),
+  path: typeof import("path"),
+  os: typeof import("os")
+): Promise<void> {
+  const CLAUDE_DIR = path.join(os.homedir(), ".claude");
+  const CLAUDE_SETTINGS = path.join(CLAUDE_DIR, "settings.json");
+  const ARETE_HOOKS_DIR = path.join(os.homedir(), ".arete", "hooks");
+
+  // Check if Claude Code is installed
+  if (!fs.existsSync(CLAUDE_DIR)) {
+    return; // Claude Code not detected, skip hook installation
+  }
+
+  console.log("\n🔗 Claude Code detected! Installing hooks...\n");
+
+  // Create hooks directory
+  if (!fs.existsSync(ARETE_HOOKS_DIR)) {
+    fs.mkdirSync(ARETE_HOOKS_DIR, { recursive: true });
+  }
+
+  // Copy extraction script (get from package dist)
+  const extractScriptPath = path.join(ARETE_HOOKS_DIR, "extract-facts.mjs");
+
+  // Write inline extraction runner script
+  const extractRunner = `#!/usr/bin/env node
+/**
+ * Arete fact extraction runner
+ * Called by Claude Code hooks at PreCompact and SessionEnd
+ */
+
+const { spawn } = require("child_process");
+const path = require("path");
+
+// Get transcript path from stdin JSON
+let input = "";
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", async () => {
+  try {
+    const data = JSON.parse(input);
+    const transcriptPath = data.transcript_path;
+    const eventType = data.hook_event_name;
+
+    if (!transcriptPath) {
+      console.error("No transcript_path in hook input");
+      process.exit(0);
+    }
+
+    // Run the extraction via npx
+    const child = spawn("npx", ["arete-mcp-server", "extract", transcriptPath, eventType], {
+      stdio: "inherit",
+      env: { ...process.env },
+    });
+
+    child.on("close", code => process.exit(code || 0));
+    child.on("error", err => {
+      console.error("Extraction failed:", err);
+      process.exit(0); // Don't block session
+    });
+  } catch (e) {
+    console.error("Hook parse error:", e);
+    process.exit(0); // Don't block session
+  }
+});
+`;
+
+  fs.writeFileSync(extractScriptPath, extractRunner);
+  fs.chmodSync(extractScriptPath, "755");
+
+  // Load or create Claude settings
+  let settings: Record<string, unknown> = {};
+  if (fs.existsSync(CLAUDE_SETTINGS)) {
+    try {
+      settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS, "utf-8"));
+    } catch {
+      settings = {};
+    }
+  }
+
+  // Define Arete hooks
+  const areteHooks = {
+    SessionStart: [{
+      hooks: [{
+        type: "command",
+        command: "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"Call arete_identity(task: inferred from user message) at conversation start. After responses, call arete_remember for durable facts.\"}}'",
+      }],
+    }],
+    PreCompact: [{
+      hooks: [{
+        type: "command",
+        command: `node ${extractScriptPath}`,
+        timeout: 30,
+      }],
+    }],
+    SessionEnd: [{
+      hooks: [{
+        type: "command",
+        command: `node ${extractScriptPath}`,
+        timeout: 60,
+      }],
+    }],
+  };
+
+  // Merge with existing hooks (don't overwrite user hooks)
+  const existingHooks = (settings.hooks || {}) as Record<string, unknown[]>;
+  for (const [event, hookDefs] of Object.entries(areteHooks)) {
+    if (!existingHooks[event]) {
+      existingHooks[event] = hookDefs;
+    } else {
+      // Check if Arete hook already exists
+      const hasAreteHook = (existingHooks[event] as Array<{ hooks?: Array<{ command?: string }> }>).some(
+        h => h.hooks?.some(hh => hh.command?.includes("arete") || hh.command?.includes("extract-facts"))
+      );
+      if (!hasAreteHook) {
+        existingHooks[event] = [...existingHooks[event], ...hookDefs];
+      }
+    }
+  }
+
+  settings.hooks = existingHooks;
+
+  // Save settings
+  fs.writeFileSync(CLAUDE_SETTINGS, JSON.stringify(settings, null, 2));
+
+  console.log("✅ Claude Code hooks installed:");
+  console.log("   - SessionStart: Inject arete_identity instruction");
+  console.log("   - PreCompact: Extract facts before context compression");
+  console.log("   - SessionEnd: Extract facts when session ends");
+  console.log(`\n📁 Hook script: ${extractScriptPath}`);
+  console.log(`📁 Claude settings: ${CLAUDE_SETTINGS}`);
+}
+
 // Setup command - inline signup for easy onboarding
 async function setup(email?: string) {
   const startTime = Date.now();
@@ -552,6 +685,9 @@ async function setup(email?: string) {
 }`);
     console.log("\nThen restart Claude Desktop and ask: \"What do you know about me?\"\n");
 
+    // Auto-install Claude Code hooks if detected
+    await installClaudeCodeHooks(fs, path, os);
+
     // Flush telemetry before exiting
     await shutdownTelemetry();
 
@@ -573,18 +709,37 @@ if (command === "setup") {
     console.error("Setup failed:", error);
     process.exit(1);
   });
+} else if (command === "extract") {
+  // Extract facts from transcript (called by hooks)
+  const transcriptPath = args[1];
+  const eventType = args[2] || "manual";
+
+  import("./hooks/extract-facts.js")
+    .then(({ runExtraction }) => runExtraction(transcriptPath, eventType))
+    .then(() => process.exit(0))
+    .catch(async (error) => {
+      console.error("Extraction failed:", error);
+      process.exit(1);
+    });
 } else if (command === "--help" || command === "-h") {
   console.log(`
 arete-mcp-server - Portable AI identity for Claude Desktop
 
 Commands:
-  setup [email]   Sign up and configure Arete
-  --help, -h      Show this help message
+  setup [email]                Sign up, configure Arete, and install Claude Code hooks
+  extract <path> [event]       Extract facts from transcript (used by hooks)
+  --help, -h                   Show this help message
 
 Usage:
   npx arete-mcp-server setup              Interactive setup (prompts for email)
   npx arete-mcp-server setup EMAIL        Non-interactive setup
   npx arete-mcp-server                    Start MCP server (after setup)
+
+Claude Code Integration:
+  Setup auto-detects Claude Code and installs hooks for:
+  - SessionStart: Injects arete_identity instruction
+  - PreCompact: Extracts facts before context compression
+  - SessionEnd: Extracts facts when session ends
 
 Examples:
   npx arete-mcp-server setup
