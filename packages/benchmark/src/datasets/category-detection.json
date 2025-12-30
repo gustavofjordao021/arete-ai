@@ -1,0 +1,240 @@
+{
+  "version": "1.0",
+  "description": "Test cases for detectCategory() function. Tests regex pattern matching for core/expertise/preference/context/focus categories.",
+  "testCases": [
+    {
+      "id": "core-001",
+      "input": "I'm a product manager at Google",
+      "expectedCategory": "core",
+      "tags": ["core", "role", "company"]
+    },
+    {
+      "id": "core-002",
+      "input": "I am a senior software engineer",
+      "expectedCategory": "core",
+      "tags": ["core", "role"]
+    },
+    {
+      "id": "core-003",
+      "input": "I work at Anthropic on AI safety",
+      "expectedCategory": "core",
+      "tags": ["core", "company"]
+    },
+    {
+      "id": "core-004",
+      "input": "My role is tech lead",
+      "expectedCategory": "core",
+      "tags": ["core", "role"]
+    },
+    {
+      "id": "core-005",
+      "input": "My job is to design user interfaces",
+      "expectedCategory": "core",
+      "tags": ["core", "role"]
+    },
+    {
+      "id": "core-006",
+      "input": "My title is VP of Engineering",
+      "expectedCategory": "core",
+      "tags": ["core", "role"]
+    },
+    {
+      "id": "core-007",
+      "input": "My name is Sarah Chen",
+      "expectedCategory": "core",
+      "tags": ["core", "name"]
+    },
+    {
+      "id": "core-008",
+      "input": "I'm a founder building a startup",
+      "expectedCategory": "core",
+      "tags": ["core", "role"]
+    },
+    {
+      "id": "expertise-001",
+      "input": "I know React and TypeScript very well",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "skills"]
+    },
+    {
+      "id": "expertise-002",
+      "input": "Expert in machine learning and deep learning",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "skills"]
+    },
+    {
+      "id": "expertise-003",
+      "input": "I'm skilled in Python and data analysis",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "skills"]
+    },
+    {
+      "id": "expertise-004",
+      "input": "10 years of backend development experience",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "experience"]
+    },
+    {
+      "id": "expertise-005",
+      "input": "Proficient in SQL and database optimization",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "skills"]
+    },
+    {
+      "id": "expertise-006",
+      "input": "Experienced with cloud infrastructure",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "experience"]
+    },
+    {
+      "id": "expertise-007",
+      "input": "My expertise is in distributed systems",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "skills"]
+    },
+    {
+      "id": "expertise-008",
+      "input": "Specialist in security and cryptography",
+      "expectedCategory": "expertise",
+      "tags": ["expertise", "skills"]
+    },
+    {
+      "id": "preference-001",
+      "input": "I prefer dark mode in all my editors",
+      "expectedCategory": "preference",
+      "tags": ["preference", "ui"]
+    },
+    {
+      "id": "preference-002",
+      "input": "I like concise answers without fluff",
+      "expectedCategory": "preference",
+      "tags": ["preference", "style"]
+    },
+    {
+      "id": "preference-003",
+      "input": "I love functional programming paradigms",
+      "expectedCategory": "preference",
+      "tags": ["preference", "style"]
+    },
+    {
+      "id": "preference-004",
+      "input": "I hate verbose documentation",
+      "expectedCategory": "preference",
+      "tags": ["preference", "style"]
+    },
+    {
+      "id": "preference-005",
+      "input": "I always use TypeScript over JavaScript",
+      "expectedCategory": "preference",
+      "tags": ["preference", "tools"]
+    },
+    {
+      "id": "preference-006",
+      "input": "My favorite framework is Next.js",
+      "expectedCategory": "preference",
+      "tags": ["preference", "tools"]
+    },
+    {
+      "id": "focus-001",
+      "input": "I'm learning Rust for systems programming",
+      "expectedCategory": "focus",
+      "tags": ["focus", "learning"]
+    },
+    {
+      "id": "focus-002",
+      "input": "I'm building a Chrome extension for productivity",
+      "expectedCategory": "focus",
+      "tags": ["focus", "project"]
+    },
+    {
+      "id": "focus-003",
+      "input": "Working on a new authentication system",
+      "expectedCategory": "focus",
+      "tags": ["focus", "project"]
+    },
+    {
+      "id": "focus-004",
+      "input": "Studying for AWS certification",
+      "expectedCategory": "focus",
+      "tags": ["focus", "learning"]
+    },
+    {
+      "id": "focus-005",
+      "input": "Currently migrating our monolith to microservices",
+      "expectedCategory": "focus",
+      "tags": ["focus", "project"]
+    },
+    {
+      "id": "focus-006",
+      "input": "Researching LLM fine-tuning techniques",
+      "expectedCategory": "focus",
+      "tags": ["focus", "learning"]
+    },
+    {
+      "id": "context-001",
+      "input": "I'm based in San Francisco",
+      "expectedCategory": "context",
+      "tags": ["context", "location"]
+    },
+    {
+      "id": "context-002",
+      "input": "I live in Berlin, Germany",
+      "expectedCategory": "context",
+      "tags": ["context", "location"]
+    },
+    {
+      "id": "context-003",
+      "input": "I use VS Code on Mac",
+      "expectedCategory": "context",
+      "tags": ["context", "tools"]
+    },
+    {
+      "id": "context-004",
+      "input": "Running on Ubuntu 22.04",
+      "expectedCategory": "context",
+      "tags": ["context", "environment"]
+    },
+    {
+      "id": "context-005",
+      "input": "My timezone is PST",
+      "expectedCategory": "context",
+      "tags": ["context", "location"]
+    },
+    {
+      "id": "context-006",
+      "input": "Using a 16-inch MacBook Pro",
+      "expectedCategory": "context",
+      "tags": ["context", "tools"]
+    },
+    {
+      "id": "edge-001",
+      "input": "Brazilian developer with 5 years experience",
+      "expectedCategory": "expertise",
+      "tags": ["edge", "overlap"]
+    },
+    {
+      "id": "edge-002",
+      "input": "Senior engineer who loves clean code",
+      "expectedCategory": "preference",
+      "tags": ["edge", "overlap"]
+    },
+    {
+      "id": "edge-003",
+      "input": "React developer",
+      "expectedCategory": "context",
+      "tags": ["edge", "fallback"]
+    },
+    {
+      "id": "edge-004",
+      "input": "Has a cat named Whiskers",
+      "expectedCategory": "context",
+      "tags": ["edge", "fallback"]
+    },
+    {
+      "id": "edge-005",
+      "input": "Speaks Portuguese and English",
+      "expectedCategory": "context",
+      "tags": ["edge", "fallback"]
+    }
+  ]
+}

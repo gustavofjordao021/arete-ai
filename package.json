@@ -20,6 +20,8 @@
     "test:telemetry": "npm test --workspace=@arete/telemetry",
     "test:mcp": "npm test --workspace=arete-mcp-server",
     "test:all": "npm run test:core && npm run test:telemetry && npm run test:mcp && npm run test",
+    "test:benchmark": "npm test -w @arete/benchmark",
+    "benchmark": "npm run benchmark -w @arete/benchmark",
     "cli": "node packages/core/dist/cli/index.js",
     "mcp": "node packages/mcp-server/dist/index.js"
   },
