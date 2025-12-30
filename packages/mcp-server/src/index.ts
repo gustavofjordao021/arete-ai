@@ -28,6 +28,9 @@ import { activityHandler } from "./tools/arete-activity.js";
 import { inferHandler } from "./tools/identity-infer.js";
 import { onboardHandler } from "./tools/arete-onboard.js";
 
+// Handshake enforcement (prevents stdin bypass)
+import { setInitialized, requireInitialization } from "./handshake.js";
+
 import {
   initTelemetry,
   shutdownTelemetry,
@@ -59,6 +62,13 @@ const server = new McpServer({
   name: "arete",
   version: "0.1.0",
 });
+
+// Mark initialized after MCP handshake completes
+// This prevents stdin bypass attacks (piping JSON-RPC without initialize)
+server.server.oninitialized = () => {
+  setInitialized(true);
+  console.error("[Arete] MCP handshake complete");
+};
 
 // --- arete_identity ---
 server.registerTool(
@@ -104,16 +114,18 @@ server.registerTool(
     },
   },
   async (input) => {
-    return withTelemetry("arete_identity", async () => {
-      const result = await identityHandler(input);
-      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-      return {
-        content: [
-          ...result.content,
-          { type: "text" as const, text: `\n---\n${jsonContent}` },
-        ],
-      };
-    });
+    return requireInitialization("arete_identity", () =>
+      withTelemetry("arete_identity", async () => {
+        const result = await identityHandler(input);
+        const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+        return {
+          content: [
+            ...result.content,
+            { type: "text" as const, text: `\n---\n${jsonContent}` },
+          ],
+        };
+      })
+    );
   }
 );
 
@@ -153,30 +165,32 @@ server.registerTool(
     },
   },
   async (input) => {
-    return withTelemetry("arete_remember", async () => {
-      const result = await rememberHandler(input);
-      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+    return requireInitialization("arete_remember", () =>
+      withTelemetry("arete_remember", async () => {
+        const result = await rememberHandler(input);
+        const jsonContent = JSON.stringify(result.structuredContent, null, 2);
 
-      // Track fact operations
-      if (result.structuredContent?.success) {
-        const op = input.operation || "add";
-        if (op === "add" && result.structuredContent?.fact) {
-          const fact = result.structuredContent.fact as Record<string, unknown>;
-          telemetry.trackFactCreated(
-            (fact.category || "context") as "core" | "expertise" | "preference" | "context" | "focus",
-            "conversation",
-            "candidate"
-          );
+        // Track fact operations
+        if (result.structuredContent?.success) {
+          const op = input.operation || "add";
+          if (op === "add" && result.structuredContent?.fact) {
+            const fact = result.structuredContent.fact as Record<string, unknown>;
+            telemetry.trackFactCreated(
+              (fact.category || "context") as "core" | "expertise" | "preference" | "context" | "focus",
+              "conversation",
+              "candidate"
+            );
+          }
         }
-      }
 
-      return {
-        content: [
-          ...result.content,
-          { type: "text" as const, text: `\n---\n${jsonContent}` },
-        ],
-      };
-    });
+        return {
+          content: [
+            ...result.content,
+            { type: "text" as const, text: `\n---\n${jsonContent}` },
+          ],
+        };
+      })
+    );
   }
 );
 
@@ -216,16 +230,18 @@ server.registerTool(
     },
   },
   async (input) => {
-    return withTelemetry("arete_activity", async () => {
-      const result = await activityHandler(input);
-      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
-      return {
-        content: [
-          ...result.content,
-          { type: "text" as const, text: `\n---\n${jsonContent}` },
-        ],
-      };
-    });
+    return requireInitialization("arete_activity", () =>
+      withTelemetry("arete_activity", async () => {
+        const result = await activityHandler(input);
+        const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+        return {
+          content: [
+            ...result.content,
+            { type: "text" as const, text: `\n---\n${jsonContent}` },
+          ],
+        };
+      })
+    );
   }
 );
 
@@ -267,43 +283,45 @@ server.registerTool(
     },
   },
   async (input) => {
-    return withTelemetry("arete_infer", async () => {
-      const result = await inferHandler(input);
-      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+    return requireInitialization("arete_infer", () =>
+      withTelemetry("arete_infer", async () => {
+        const result = await inferHandler(input);
+        const jsonContent = JSON.stringify(result.structuredContent, null, 2);
 
-      // Track inference call and candidate proposals
-      const sc = result.structuredContent as unknown as Record<string, unknown>;
-      const candidates = sc?.candidates as Array<Record<string, unknown>> | undefined;
-      if (candidates && candidates.length > 0) {
-        const contextEventsAnalyzed = (sc.contextEventsAnalyzed || sc.eventsAnalyzed || 0) as number;
-        const source = (sc.source || "local_context") as string;
-        telemetry.track({
-          event: "identity.infer_called",
-          properties: {
-            lookback_days: input.lookbackDays || 7,
-            context_event_count: contextEventsAnalyzed,
-            source: source as "local_context" | "rollup" | "haiku_analysis",
-          },
-        });
+        // Track inference call and candidate proposals
+        const sc = result.structuredContent as unknown as Record<string, unknown>;
+        const candidates = sc?.candidates as Array<Record<string, unknown>> | undefined;
+        if (candidates && candidates.length > 0) {
+          const contextEventsAnalyzed = (sc.contextEventsAnalyzed || sc.eventsAnalyzed || 0) as number;
+          const source = (sc.source || "local_context") as string;
+          telemetry.track({
+            event: "identity.infer_called",
+            properties: {
+              lookback_days: input.lookbackDays || 7,
+              context_event_count: contextEventsAnalyzed,
+              source: source as "local_context" | "rollup" | "haiku_analysis",
+            },
+          });
 
-        // Track each proposed candidate (for approval rate calculation)
-        for (const candidate of candidates) {
-          telemetry.trackCandidateProposed(
-            ((candidate.category || "focus") as string) as "core" | "expertise" | "preference" | "context" | "focus",
-            (candidate.confidence || 0.5) as number,
-            candidates.length,
-            candidate.id as string | undefined
-          );
+          // Track each proposed candidate (for approval rate calculation)
+          for (const candidate of candidates) {
+            telemetry.trackCandidateProposed(
+              ((candidate.category || "focus") as string) as "core" | "expertise" | "preference" | "context" | "focus",
+              (candidate.confidence || 0.5) as number,
+              candidates.length,
+              candidate.id as string | undefined
+            );
+          }
         }
-      }
 
-      return {
-        content: [
-          ...result.content,
-          { type: "text" as const, text: `\n---\n${jsonContent}` },
-        ],
-      };
-    });
+        return {
+          content: [
+            ...result.content,
+            { type: "text" as const, text: `\n---\n${jsonContent}` },
+          ],
+        };
+      })
+    );
   }
 );
 
@@ -360,52 +378,54 @@ server.registerTool(
     },
   },
   async (input) => {
-    return withTelemetry("arete_onboard", async () => {
-      const result = await onboardHandler(input);
-      const jsonContent = JSON.stringify(result.structuredContent, null, 2);
+    return requireInitialization("arete_onboard", () =>
+      withTelemetry("arete_onboard", async () => {
+        const result = await onboardHandler(input);
+        const jsonContent = JSON.stringify(result.structuredContent, null, 2);
 
-      // Track interview events (using type assertion for new event types)
-      const phase = result.structuredContent.phase;
-      const trackEvent = (event: string, properties: Record<string, unknown>) => {
-        (telemetry as unknown as { track: (e: { event: string; properties: Record<string, unknown> }) => void }).track({ event, properties });
-      };
+        // Track interview events (using type assertion for new event types)
+        const phase = result.structuredContent.phase;
+        const trackEvent = (event: string, properties: Record<string, unknown>) => {
+          (telemetry as unknown as { track: (e: { event: string; properties: Record<string, unknown> }) => void }).track({ event, properties });
+        };
 
-      const timing = result.structuredContent.timing;
+        const timing = result.structuredContent.timing;
 
-      if (input.mode === "start") {
-        trackEvent("interview.started", {});
-      } else if (input.mode === "answer" && result.structuredContent.recentFacts) {
-        trackEvent("interview.question_answered", {
-          facts_extracted: result.structuredContent.recentFacts.length,
-          question_number: result.structuredContent.question?.number || 0,
-          extraction_source: timing?.source || "unknown",
-          extraction_ms: timing?.extractionMs,
-          total_ms: timing?.totalMs,
-        });
-      } else if (phase === "branching") {
-        trackEvent("interview.branching_offered", {
-          suggestions_count: result.structuredContent.branching?.suggestions.length || 0,
-          extraction_source: timing?.source || "unknown",
-          total_ms: timing?.totalMs,
-        });
-      } else if (input.mode === "branch") {
-        trackEvent(
-          input.branchDecision === "continue" ? "interview.branching_accepted" : "interview.branching_declined",
-          {}
-        );
-      } else if (phase === "complete") {
-        trackEvent("interview.completed", {
-          facts_extracted: result.structuredContent.completion?.factsExtracted || 0,
-        });
-      }
+        if (input.mode === "start") {
+          trackEvent("interview.started", {});
+        } else if (input.mode === "answer" && result.structuredContent.recentFacts) {
+          trackEvent("interview.question_answered", {
+            facts_extracted: result.structuredContent.recentFacts.length,
+            question_number: result.structuredContent.question?.number || 0,
+            extraction_source: timing?.source || "unknown",
+            extraction_ms: timing?.extractionMs,
+            total_ms: timing?.totalMs,
+          });
+        } else if (phase === "branching") {
+          trackEvent("interview.branching_offered", {
+            suggestions_count: result.structuredContent.branching?.suggestions.length || 0,
+            extraction_source: timing?.source || "unknown",
+            total_ms: timing?.totalMs,
+          });
+        } else if (input.mode === "branch") {
+          trackEvent(
+            input.branchDecision === "continue" ? "interview.branching_accepted" : "interview.branching_declined",
+            {}
+          );
+        } else if (phase === "complete") {
+          trackEvent("interview.completed", {
+            facts_extracted: result.structuredContent.completion?.factsExtracted || 0,
+          });
+        }
 
-      return {
-        content: [
-          ...result.content,
-          { type: "text" as const, text: `\n---\n${jsonContent}` },
-        ],
-      };
-    });
+        return {
+          content: [
+            ...result.content,
+            { type: "text" as const, text: `\n---\n${jsonContent}` },
+          ],
+        };
+      })
+    );
   }
 );
 
