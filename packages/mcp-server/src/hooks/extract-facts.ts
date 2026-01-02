@@ -13,7 +13,16 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join, dirname } from "path";
-import { createIdentityFact, type IdentityV2, type IdentityFact, type FactCategory, type Visibility } from "@arete/core";
+import {
+  createIdentityFact,
+  createCLIClient,
+  loadConfig,
+  type IdentityV2,
+  type IdentityFact,
+  type FactCategory,
+  type Visibility,
+  type CLIClient,
+} from "@arete/core";
 
 // ============================================================================
 // CONFIGURATION
@@ -24,6 +33,24 @@ const EXTRACTION_MODEL = "claude-3-haiku-20240307";
 const CONFIG_DIR = join(homedir(), ".arete");
 const IDENTITY_FILE = join(CONFIG_DIR, "identity.json");
 const EXTRACTION_LOG = join(CONFIG_DIR, "extraction.log");
+
+// Cloud client (lazily initialized)
+let cloudClient: CLIClient | null = null;
+
+function getCloudClient(): CLIClient | null {
+  if (cloudClient) return cloudClient;
+
+  const config = loadConfig();
+  if (config.apiKey && config.supabaseUrl) {
+    cloudClient = createCLIClient({
+      supabaseUrl: config.supabaseUrl,
+      apiKey: config.apiKey,
+    });
+    return cloudClient;
+  }
+
+  return null;
+}
 
 // ============================================================================
 // TRANSCRIPT PARSING
@@ -113,12 +140,22 @@ ${conversation}
 </conversation>
 
 <extraction_rules>
-1. DURABLE facts only - things that persist beyond this conversation:
+1. DURABLE facts only - things useful in FUTURE conversations:
+
+   PERSONAL facts:
    - Role, job, company (not today's tasks)
    - Skills and expertise (not one-off code fixes)
    - Preferences and communication style (not temporary requests)
    - Location, background, constraints (not current context)
-   - Learning goals and projects (ongoing, not completed)
+   - Learning goals (ongoing, not completed)
+
+   PROJECT/STRATEGIC facts (equally important!):
+   - Strategic pivots or architectural shifts discovered
+   - Key architectural decisions and their rationale
+   - Important constraints or requirements
+   - Technology choices and why they were made
+
+   Test: Would a future AI benefit from knowing this?
 
 2. SKIP ephemeral content:
    - Specific code being discussed
@@ -133,7 +170,7 @@ ${conversation}
 
 4. Assign visibility:
    - "public": Safe for any AI (general preferences, public skills)
-   - "trusted": Needs discretion (company info, specific projects)
+   - "trusted": Needs discretion (company info, specific projects, strategic decisions)
 </extraction_rules>
 
 <categories>
@@ -173,18 +210,64 @@ export interface ExtractedFact {
   evidence?: string;
 }
 
-async function extractFactsWithHaiku(
+/**
+ * Extract facts using cloud API (preferred) or local Anthropic (fallback)
+ */
+async function extractFacts(
   messages: TranscriptMessage[],
-  apiKey: string
+  localApiKey?: string
 ): Promise<ExtractedFact[]> {
   if (messages.length < 2) {
     log("Conversation too short for meaningful extraction");
     return [];
   }
 
+  // Build transcript string for cloud API
+  const transcript = messages
+    .map(m => `[${m.role.toUpperCase()}]: ${m.content}`)
+    .join("\n\n");
+
+  // Try cloud first (uses server-side API keys)
+  const client = getCloudClient();
+  if (client) {
+    try {
+      log("Extracting via cloud API...");
+      const result = await client.extractFacts(transcript);
+      log(`Cloud extraction returned ${result.facts.length} facts (model: ${result.model})`);
+
+      // Map cloud facts to our ExtractedFact format
+      return result.facts.map(f => ({
+        category: validateCategory(f.category),
+        content: f.content,
+        confidence: Math.max(0, Math.min(1, f.confidence)),
+        visibility: "trusted" as Visibility, // Cloud API doesn't return visibility
+        evidence: f.reasoning,
+      }));
+    } catch (error) {
+      log(`Cloud extraction failed: ${error}, trying local fallback...`);
+    }
+  }
+
+  // Fallback to local Anthropic API
+  if (localApiKey) {
+    return extractFactsWithLocalHaiku(messages, localApiKey);
+  }
+
+  log("No extraction method available (no cloud auth, no local API key)");
+  return [];
+}
+
+/**
+ * Extract facts using local Anthropic API (fallback)
+ */
+async function extractFactsWithLocalHaiku(
+  messages: TranscriptMessage[],
+  apiKey: string
+): Promise<ExtractedFact[]> {
   const prompt = buildConversationExtractionPrompt(messages);
 
   try {
+    log("Extracting via local Anthropic API...");
     const response = await fetch(ANTHROPIC_API_URL, {
       method: "POST",
       headers: {
@@ -201,7 +284,7 @@ async function extractFactsWithHaiku(
 
     if (!response.ok) {
       const errorText = await response.text();
-      log(`Haiku API error: ${response.status} - ${errorText}`);
+      log(`Local Haiku API error: ${response.status} - ${errorText}`);
       return [];
     }
 
@@ -211,7 +294,7 @@ async function extractFactsWithHaiku(
 
     const text = data.content?.[0]?.text;
     if (!text) {
-      log("Empty response from Haiku");
+      log("Empty response from local Haiku");
       return [];
     }
 
@@ -227,7 +310,7 @@ async function extractFactsWithHaiku(
       evidence: f.evidence,
     }));
   } catch (error) {
-    log(`Extraction error: ${error}`);
+    log(`Local extraction error: ${error}`);
     return [];
   }
 }
@@ -385,10 +468,10 @@ export async function runExtraction(transcriptPath: string, eventType: string = 
     return;
   }
 
-  // Get API key from environment or config
-  let apiKey = process.env.ANTHROPIC_API_KEY;
+  // Get local API key from environment or config (fallback only)
+  let localApiKey = process.env.ANTHROPIC_API_KEY;
 
-  if (!apiKey) {
+  if (!localApiKey) {
     // Try loading from .env in project root
     try {
       const envPath = join(process.cwd(), ".env");
@@ -396,7 +479,7 @@ export async function runExtraction(transcriptPath: string, eventType: string = 
         const envContent = readFileSync(envPath, "utf-8");
         const match = envContent.match(/ANTHROPIC_API_KEY=["']?([^"'\n]+)["']?/);
         if (match) {
-          apiKey = match[1];
+          localApiKey = match[1];
         }
       }
     } catch {
@@ -405,14 +488,14 @@ export async function runExtraction(transcriptPath: string, eventType: string = 
   }
 
   // Also try ~/.arete/.env
-  if (!apiKey) {
+  if (!localApiKey) {
     try {
       const areteEnvPath = join(CONFIG_DIR, ".env");
       if (existsSync(areteEnvPath)) {
         const envContent = readFileSync(areteEnvPath, "utf-8");
         const match = envContent.match(/ANTHROPIC_API_KEY=["']?([^"'\n]+)["']?/);
         if (match) {
-          apiKey = match[1];
+          localApiKey = match[1];
         }
       }
     } catch {
@@ -420,8 +503,11 @@ export async function runExtraction(transcriptPath: string, eventType: string = 
     }
   }
 
-  if (!apiKey) {
-    log("Error: ANTHROPIC_API_KEY not found in environment or .env");
+  // Check if we have any extraction method available
+  const hasCloudClient = getCloudClient() !== null;
+  if (!hasCloudClient && !localApiKey) {
+    log("Error: No extraction method available (no cloud auth, no ANTHROPIC_API_KEY)");
+    log("Run 'npx arete-mcp-server setup' to configure cloud auth, or set ANTHROPIC_API_KEY for local extraction");
     return;
   }
 
@@ -435,9 +521,8 @@ export async function runExtraction(transcriptPath: string, eventType: string = 
     return;
   }
 
-  // Extract facts with Haiku
-  log("Calling Haiku for extraction...");
-  const extractedFacts = await extractFactsWithHaiku(messages, apiKey);
+  // Extract facts (cloud-first, local fallback)
+  const extractedFacts = await extractFacts(messages, localApiKey);
   log(`Extracted ${extractedFacts.length} facts`);
 
   if (extractedFacts.length === 0) {

@@ -17,6 +17,9 @@
 import { config as loadDotenv } from "dotenv";
 loadDotenv({ quiet: true });
 
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { homedir } from "os";
+import { join, dirname } from "path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import * as z from "zod";
@@ -35,6 +38,13 @@ import {
   initTelemetry,
   shutdownTelemetry,
 } from "@arete/telemetry";
+
+import {
+  loadConfig,
+  createCLIClient,
+  initSyncService,
+  type IdentityV2,
+} from "@arete/core";
 
 // Initialize telemetry (ON by default, opt-out via ~/.arete/config.json)
 const telemetry = initTelemetry();
@@ -145,7 +155,11 @@ server.registerTool(
       "**Operations:**\n" +
       "- add (default): Store new fact\n" +
       "- validate: Strengthen existing fact\n" +
-      "- remove: Delete matching fact",
+      "- remove: Delete matching fact\n\n" +
+      "**Store both personal AND project facts:**\n" +
+      "- Personal: 'Prefers concise responses'\n" +
+      "- Project: 'Arete is an aggregation layer for memory providers'\n\n" +
+      "Test: Would a future AI benefit from knowing this? If yes, store it.",
     inputSchema: {
       content: z
         .string()
@@ -429,8 +443,65 @@ server.registerTool(
   }
 );
 
+// --- Sync Service Setup ---
+
+const CONFIG_DIR = join(homedir(), ".arete");
+
+function getIdentityFile(): string {
+  return join(CONFIG_DIR, "identity.json");
+}
+
+function isIdentityV2(data: unknown): data is IdentityV2 {
+  if (!data || typeof data !== "object") return false;
+  const obj = data as Record<string, unknown>;
+  return obj.version === "2.0.0" && Array.isArray(obj.facts);
+}
+
+function loadLocalIdentity(): IdentityV2 | null {
+  const identityFile = getIdentityFile();
+  if (!existsSync(identityFile)) return null;
+
+  try {
+    const data = readFileSync(identityFile, "utf-8");
+    const parsed = JSON.parse(data);
+    return isIdentityV2(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLocalIdentity(identity: IdentityV2): void {
+  const identityFile = getIdentityFile();
+  const dir = dirname(identityFile);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(identityFile, JSON.stringify(identity, null, 2));
+}
+
+function initializeSync(): void {
+  const config = loadConfig();
+  const client = config?.apiKey && config?.supabaseUrl
+    ? createCLIClient({ supabaseUrl: config.supabaseUrl, apiKey: config.apiKey })
+    : null;
+
+  const syncService = initSyncService({
+    client,
+    loadLocalIdentity,
+    saveLocalIdentity,
+  });
+
+  // Pull from cloud and merge on startup (non-blocking)
+  syncService.initialize().catch((err) => {
+    console.error("[SyncService] Startup sync failed:", err);
+  });
+}
+
 // Start server with stdio transport
 async function main() {
+  // Initialize sync service (non-blocking background sync)
+  initializeSync();
+
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error("Arete MCP server running on stdio");

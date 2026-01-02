@@ -96,16 +96,20 @@ You have Arete tools for portable identity.
 
 AT CONVERSATION START: Call arete_identity to know who you're talking to.
 
-AFTER RESPONSES: If the user revealed a preference, constraint, or personal fact — store it with arete_remember:
+AFTER RESPONSES: If the user revealed something DURABLE — useful in future conversations — store it with arete_remember:
 
-Examples:
+Personal examples:
 - "I'm Brazilian" → arete_remember(content: "User is Brazilian")
 - "I prefer short answers" → arete_remember(content: "Prefers concise responses")
 - "I'm learning Rust" → arete_remember(content: "Currently learning Rust")
 
+Project/strategic examples (equally important!):
+- Strategic pivot discovered → arete_remember(content: "Project shifting to X approach")
+- Architecture decision → arete_remember(content: "Uses Y pattern for Z reason")
+
 Category is auto-detected (core, expertise, preference, context, focus).
 
-This is not optional. Storing context is part of completing the task.
+Test: Would a future AI benefit from knowing this? If yes, store it.
 ```
 
 Without this, you get tools but Claude won't proactively use them.
