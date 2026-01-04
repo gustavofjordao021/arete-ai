@@ -17,11 +17,10 @@ import { homedir } from "os";
 import { join } from "path";
 import {
   loadConfig,
-  createCLIClient,
   DEFAULT_HALF_LIFE_DAYS,
+  getSyncService,
   type IdentityV2,
   type IdentityFact,
-  type CLIClient,
 } from "@arete/core";
 import { EmbeddingService, getEmbeddingService } from "../services/embedding-service.js";
 import { cosineSimilarity } from "../services/vector-math.js";
@@ -85,33 +84,11 @@ function isIdentityV2(identity: unknown): identity is IdentityV2 {
   return obj.version === "2.0.0" && Array.isArray(obj.facts);
 }
 
-function getCloudClient(): CLIClient | null {
-  const config = loadConfig();
-  if (!config || !config.apiKey || !config.supabaseUrl) {
-    return null;
-  }
-  return createCLIClient({
-    supabaseUrl: config.supabaseUrl,
-    apiKey: config.apiKey,
-  });
-}
-
-async function loadIdentityV2(): Promise<IdentityV2 | null> {
-  // Try cloud first if authenticated
-  const client = getCloudClient();
-  if (client) {
-    try {
-      const cloudIdentity = await client.getIdentity();
-      if (cloudIdentity && isIdentityV2(cloudIdentity)) {
-        return cloudIdentity as IdentityV2;
-      }
-    } catch (err) {
-      console.error("Cloud identity fetch failed:", err);
-      // Fall through to local
-    }
-  }
-
-  // Fallback to local file
+/**
+ * Load identity from local file (~/.arete/identity.json).
+ * This is the source of truth for local-first architecture.
+ */
+function loadLocalIdentity(): IdentityV2 | null {
   const identityFile = getIdentityFile();
 
   if (!existsSync(identityFile)) {
@@ -130,6 +107,24 @@ async function loadIdentityV2(): Promise<IdentityV2 | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Load identity with local-first approach.
+ * - Reads from local file instantly (source of truth)
+ * - Queues background sync to cloud (non-blocking)
+ */
+async function loadIdentityV2(): Promise<IdentityV2 | null> {
+  // Local-first: read from local file instantly
+  const local = loadLocalIdentity();
+
+  // Queue background sync (non-blocking)
+  const syncService = getSyncService();
+  if (syncService) {
+    syncService.queueSync("identity");
+  }
+
+  return local;
 }
 
 // --- Confidence Decay ---

@@ -135,5 +135,38 @@ export {
   type CleanupResult,
 } from "./archive/index.js";
 
+// Sync (local-first with background cloud sync)
+export {
+  // Sync state
+  type SyncState,
+  type DeletedFact,
+  SyncStateSchema,
+  loadSyncState,
+  saveSyncState,
+  createEmptySyncState,
+  markPendingPush,
+  markPushComplete,
+  markPullComplete,
+  markSyncError,
+  trackDeletedFact,
+  clearDeletedFacts,
+  getBackoffMs,
+  setSyncConfigDir,
+  getSyncConfigDir,
+  // Identity merger
+  type MergeResult,
+  type FactConflict,
+  mergeIdentities,
+  deduplicateFacts,
+  areSimilarFacts,
+  findMatchingFact,
+  // Sync service
+  type SyncService,
+  type SyncType,
+  type SyncServiceOptions,
+  initSyncService,
+  getSyncService,
+} from "./sync/index.js";
+
 // Type alias for backwards compatibility
 export type { AreteIdentity as Identity } from "./schema/index.js";

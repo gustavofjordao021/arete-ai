@@ -45,6 +45,8 @@ async function build() {
       "@modelcontextprotocol/sdk",
       "@modelcontextprotocol/sdk/*",
       "zod",
+      "dotenv", // CommonJS module, must be external
+      "openai", // Has CommonJS internals
     ],
     // Bundle these workspace packages into the output
     // (they're in node_modules due to npm workspaces)

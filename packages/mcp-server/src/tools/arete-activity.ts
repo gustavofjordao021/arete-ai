@@ -12,14 +12,11 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import {
-  loadConfig,
-  createCLIClient,
   safeParseContextStore,
   createEmptyContextStore,
+  getSyncService,
   type ContextStore,
   type ContextEvent,
-  type ContextEventTypeValue,
-  type CLIClient,
 } from "@arete/core";
 
 // Configurable directory (for testing)
@@ -59,17 +56,6 @@ export interface ActivityToolResult {
 
 // --- Loading ---
 
-function getCloudClient(): CLIClient | null {
-  const config = loadConfig();
-  if (!config || !config.apiKey || !config.supabaseUrl) {
-    return null;
-  }
-  return createCLIClient({
-    supabaseUrl: config.supabaseUrl,
-    apiKey: config.apiKey,
-  });
-}
-
 function loadContextStore(): ContextStore {
   const contextFile = getContextFile();
 
@@ -91,69 +77,38 @@ function loadContextStore(): ContextStore {
 export async function activityHandler(
   input: ActivityInput
 ): Promise<ActivityToolResult> {
-  let events: ContextEvent[] = [];
-  let source = "local";
+  // Local-first: read from local file instantly
+  const store = loadContextStore();
+  let events: ContextEvent[] = [...store.events];
 
-  // Try cloud first if authenticated
-  const client = getCloudClient();
-  if (client) {
-    try {
-      const cloudEvents = await client.getRecentContext({
-        type: input.type as ContextEventTypeValue | undefined,
-        source: input.source,
-        limit: input.limit,
-      });
-      events = cloudEvents.map((e: {
-        id: string;
-        type: string;
-        source: string;
-        timestamp: string;
-        data: Record<string, unknown>;
-      }) => ({
-        id: e.id,
-        type: e.type as ContextEventTypeValue,
-        source: e.source,
-        timestamp: e.timestamp,
-        data: e.data,
-      }));
-      source = "cloud";
-    } catch (err) {
-      console.error("Cloud context fetch failed:", err);
-      // Fall through to local
-    }
+  // Filter by type
+  if (input.type) {
+    events = events.filter((e) => e.type === input.type);
   }
 
-  // Fallback to local file
-  if (source === "local") {
-    const store = loadContextStore();
-    events = [...store.events];
-
-    // Filter by type
-    if (input.type) {
-      events = events.filter((e) => e.type === input.type);
-    }
-
-    // Filter by source
-    if (input.source) {
-      events = events.filter((e) => e.source === input.source);
-    }
-
-    // Filter by time
-    if (input.since) {
-      const sinceTime = new Date(input.since).getTime();
-      events = events.filter((e) => new Date(e.timestamp).getTime() >= sinceTime);
-    }
-
-    // Sort by timestamp descending (newest first)
-    events.sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-
-    // Apply limit
-    if (input.limit && input.limit > 0) {
-      events = events.slice(0, input.limit);
-    }
+  // Filter by source
+  if (input.source) {
+    events = events.filter((e) => e.source === input.source);
   }
+
+  // Filter by time
+  if (input.since) {
+    const sinceTime = new Date(input.since).getTime();
+    events = events.filter((e) => new Date(e.timestamp).getTime() >= sinceTime);
+  }
+
+  // Sort by timestamp descending (newest first)
+  events.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
+  // Apply limit
+  if (input.limit && input.limit > 0) {
+    events = events.slice(0, input.limit);
+  }
+
+  // Queue background sync (non-blocking)
+  getSyncService()?.queueSync("context");
 
   // Guidance for natural presentation
   const guidance =

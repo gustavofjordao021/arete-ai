@@ -9,6 +9,13 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { existsSync, unlinkSync, readFileSync, mkdirSync, rmdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+
+// Mock @arete/core before importing EmbeddingService
+vi.mock("@arete/core", () => ({
+  loadConfig: vi.fn(() => ({})),
+  createCLIClient: vi.fn(),
+}));
+
 import {
   EmbeddingService,
   type EmbeddingCache,

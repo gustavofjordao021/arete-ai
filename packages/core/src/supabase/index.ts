@@ -60,4 +60,8 @@ export {
   type CLIClient,
   type CLIClientOptions,
   type CLIConfig,
+  // Cloud AI types
+  type ExtractedFact,
+  type EmbeddingResult,
+  type ExtractionResult,
 } from './cli-client.js';

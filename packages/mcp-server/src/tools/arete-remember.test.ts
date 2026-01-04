@@ -14,6 +14,7 @@ import { tmpdir } from "os";
 vi.mock("@arete/core", () => ({
   loadConfig: vi.fn(() => ({})),
   createCLIClient: vi.fn(),
+  getSyncService: vi.fn(() => ({ queueSync: vi.fn() })),
   createIdentityFact: vi.fn((opts) => ({
     id: `fact-${Date.now()}`,
     category: opts.category,

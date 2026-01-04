@@ -27,6 +27,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import type { Identity } from "../schema";
+import type { IdentityV2 } from "../schema/identity-v2.js";
 
 // Anon key for initial auth request (JWT verification bypass)
 // This is safe to expose - anon keys are public and RLS protects data
@@ -73,18 +74,45 @@ export interface ContextQueryOptions {
   limit?: number;
 }
 
+// Cloud AI types
+export interface ExtractedFact {
+  category: "core" | "expertise" | "preference" | "context" | "focus";
+  content: string;
+  confidence: number;
+  reasoning?: string;
+}
+
+export interface EmbeddingResult {
+  embedding: number[];
+  model: string;
+  cached: boolean;
+}
+
+export interface ExtractionResult {
+  facts: ExtractedFact[];
+  model: string;
+}
+
 export interface CLIClient {
   // Auth
   validateKey: () => Promise<{ userId: string; email?: string } | null>;
 
-  // Identity
+  // Identity (v1 schema - for CLI backwards compatibility)
   getIdentity: () => Promise<Identity | null>;
   saveIdentity: (identity: Identity) => Promise<void>;
+
+  // Identity (v2 schema - for sync service)
+  getIdentityV2: () => Promise<IdentityV2 | null>;
+  saveIdentityV2: (identity: IdentityV2) => Promise<void>;
 
   // Context
   getRecentContext: (options?: ContextQueryOptions) => Promise<ContextEvent[]>;
   addContextEvent: (event: ContextEventInput) => Promise<ContextEvent>;
   clearContext: (type?: ContextEvent["type"]) => Promise<void>;
+
+  // Cloud AI services (uses server-side API keys)
+  getEmbedding: (text: string, factId?: string) => Promise<EmbeddingResult>;
+  extractFacts: (transcript: string) => Promise<ExtractionResult>;
 }
 
 /**
@@ -246,6 +274,29 @@ export function createCLIClient(options: CLIClientOptions): CLIClient {
     }
   }
 
+  async function getIdentityV2(): Promise<IdentityV2 | null> {
+    const response = await makeRequest(supabaseUrl, apiKey, "cli-identity", "GET");
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(errorData.error || `Failed to get identity: ${response.status}`);
+    }
+
+    const data = (await response.json()) as { identity: IdentityV2 | null };
+    return data.identity;
+  }
+
+  async function saveIdentityV2(identity: IdentityV2): Promise<void> {
+    const response = await makeRequest(supabaseUrl, apiKey, "cli-identity", "POST", {
+      identity,
+    });
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as { error?: string };
+      throw new Error(errorData.error || `Failed to save identity: ${response.status}`);
+    }
+  }
+
   async function getRecentContext(
     options: ContextQueryOptions = {}
   ): Promise<ContextEvent[]> {
@@ -303,12 +354,45 @@ export function createCLIClient(options: CLIClientOptions): CLIClient {
     }
   }
 
+  async function getEmbedding(text: string, factId?: string): Promise<EmbeddingResult> {
+    const response = await makeRequest(supabaseUrl, apiKey, "embeddings", "POST", {
+      text,
+      factId,
+    });
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+      throw new Error(errorData.error || `Failed to get embedding: ${response.status}`);
+    }
+
+    const data = (await response.json()) as EmbeddingResult;
+    return data;
+  }
+
+  async function extractFacts(transcript: string): Promise<ExtractionResult> {
+    const response = await makeRequest(supabaseUrl, apiKey, "extract-facts", "POST", {
+      transcript,
+    });
+
+    if (!response.ok) {
+      const errorData = (await response.json().catch(() => ({}))) as { error?: string; code?: string };
+      throw new Error(errorData.error || `Failed to extract facts: ${response.status}`);
+    }
+
+    const data = (await response.json()) as ExtractionResult;
+    return data;
+  }
+
   return {
     validateKey,
     getIdentity,
     saveIdentity,
+    getIdentityV2,
+    saveIdentityV2,
     getRecentContext,
     addContextEvent,
     clearContext,
+    getEmbedding,
+    extractFacts,
   };
 }

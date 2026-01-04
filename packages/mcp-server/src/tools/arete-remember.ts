@@ -17,14 +17,13 @@ import { homedir } from "os";
 import { join, dirname } from "path";
 import {
   loadConfig,
-  createCLIClient,
   createIdentityFact,
+  getSyncService,
   type IdentityV2,
   type IdentityFact,
   type FactCategory,
-  type CLIClient,
 } from "@arete/core";
-import { similarity, findBestMatch } from "./fuzzy-match.js";
+import { findBestMatch } from "./fuzzy-match.js";
 import { getEmbeddingService } from "../services/embedding-service.js";
 
 // Configurable directory (for testing)
@@ -116,17 +115,6 @@ function isIdentityV2(data: unknown): data is IdentityV2 {
   if (!data || typeof data !== "object") return false;
   const obj = data as Record<string, unknown>;
   return obj.version === "2.0.0" && Array.isArray(obj.facts);
-}
-
-function getCloudClient(): CLIClient | null {
-  const config = loadConfig();
-  if (!config || !config.apiKey || !config.supabaseUrl) {
-    return null;
-  }
-  return createCLIClient({
-    supabaseUrl: config.supabaseUrl,
-    apiKey: config.apiKey,
-  });
 }
 
 function loadIdentityV2(): IdentityV2 {
@@ -301,15 +289,8 @@ async function handleAdd(
     });
   }
 
-  // Sync to cloud (best effort)
-  const client = getCloudClient();
-  if (client) {
-    try {
-      await client.saveIdentity(identity);
-    } catch (err) {
-      console.error("Cloud sync failed:", err);
-    }
-  }
+  // Queue background sync (non-blocking)
+  getSyncService()?.queueSync("identity");
 
   return {
     content: [{ type: "text", text: `Remembered: ${content}` }],
@@ -363,15 +344,8 @@ async function handleValidate(
     };
   }
 
-  // Sync to cloud (best effort)
-  const client = getCloudClient();
-  if (client) {
-    try {
-      await client.saveIdentity(identity);
-    } catch (err) {
-      console.error("Cloud sync failed:", err);
-    }
-  }
+  // Queue background sync (non-blocking)
+  getSyncService()?.queueSync("identity");
 
   return {
     content: [{ type: "text", text: `Validated: ${validatedFact.content}` }],
@@ -432,15 +406,8 @@ async function handleRemove(
     embeddingService.invalidate(removedFact.id);
   }
 
-  // Sync to cloud (best effort)
-  const client = getCloudClient();
-  if (client) {
-    try {
-      await client.saveIdentity(identity);
-    } catch (err) {
-      console.error("Cloud sync failed:", err);
-    }
-  }
+  // Queue background sync (non-blocking)
+  getSyncService()?.queueSync("identity");
 
   return {
     content: [{ type: "text", text: `Removed: ${removedFact.content}` }],

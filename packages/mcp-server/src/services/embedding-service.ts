@@ -1,13 +1,15 @@
 /**
- * embedding-service.ts - OpenAI embedding service with local caching
+ * embedding-service.ts - Embedding service with cloud API and local caching
  *
- * Manages embeddings for identity facts using OpenAI's text-embedding-3-small model.
+ * Manages embeddings for identity facts using Arete's cloud API (server-side OpenAI keys).
+ * Falls back to local OpenAI API if cloud unavailable and user has their own key.
  * Embeddings are cached locally in ~/.arete/embeddings.json for performance.
  *
  * Features:
+ * - Cloud API with server-side keys (no user API key needed)
  * - Local cache with automatic persistence
  * - Batch embedding generation
- * - Graceful fallback when API unavailable
+ * - Graceful fallback to local API
  * - Cache invalidation on fact update/delete
  */
 
@@ -15,10 +17,10 @@ import OpenAI from "openai";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
+import { loadConfig, createCLIClient, type CLIClient } from "@arete/core";
 
 // Model configuration
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const EMBEDDING_DIM = 1536;
 
 // Configurable cache directory (for testing)
 let CACHE_DIR = join(homedir(), ".arete");
@@ -60,11 +62,11 @@ export interface EmbeddingInput {
 }
 
 /**
- * EmbeddingService - Manages OpenAI embeddings with local caching
+ * EmbeddingService - Manages embeddings with cloud API and local caching
  *
  * Usage:
  * ```typescript
- * const service = new EmbeddingService(config.openaiKey);
+ * const service = getEmbeddingService();
  *
  * if (service.isAvailable()) {
  *   const embedding = await service.getEmbedding("React expertise", "fact-uuid");
@@ -72,21 +74,42 @@ export interface EmbeddingInput {
  * ```
  */
 export class EmbeddingService {
-  private client: OpenAI | null = null;
+  private cloudClient: CLIClient | null = null;
+  private localClient: OpenAI | null = null;
   private cache: EmbeddingCache;
+  private useCloud: boolean = false;
 
-  constructor(apiKey?: string) {
-    if (apiKey) {
-      this.client = new OpenAI({ apiKey });
+  constructor(localApiKey?: string) {
+    // Try to initialize cloud client first (preferred)
+    const config = loadConfig();
+    if (config?.apiKey && config?.supabaseUrl) {
+      this.cloudClient = createCLIClient({
+        supabaseUrl: config.supabaseUrl,
+        apiKey: config.apiKey,
+      });
+      this.useCloud = true;
     }
+
+    // Fallback to local OpenAI client
+    if (localApiKey) {
+      this.localClient = new OpenAI({ apiKey: localApiKey });
+    }
+
     this.cache = this.loadCache();
   }
 
   /**
-   * Check if embedding service is available
+   * Check if embedding service is available (cloud or local)
    */
   isAvailable(): boolean {
-    return this.client !== null;
+    return this.cloudClient !== null || this.localClient !== null;
+  }
+
+  /**
+   * Check if using cloud API
+   */
+  isUsingCloud(): boolean {
+    return this.useCloud && this.cloudClient !== null;
   }
 
   /**
@@ -119,39 +142,51 @@ export class EmbeddingService {
    * @returns Embedding vector or null if unavailable
    */
   async getEmbedding(text: string, factId?: string): Promise<number[] | null> {
-    if (!this.client) return null;
-
     // Check cache first if factId provided
     if (factId && this.cache.embeddings[factId]) {
       return this.cache.embeddings[factId];
     }
 
-    try {
-      const response = await this.client.embeddings.create({
-        model: EMBEDDING_MODEL,
-        input: text,
-      });
+    let embedding: number[] | null = null;
 
-      const embedding = response.data[0].embedding;
-
-      // Cache if factId provided
-      if (factId) {
-        this.cache.embeddings[factId] = embedding;
-        this.saveCache();
+    // Try cloud first
+    if (this.cloudClient) {
+      try {
+        const result = await this.cloudClient.getEmbedding(text, factId);
+        embedding = result.embedding;
+      } catch (error) {
+        console.error("Cloud embedding failed, trying local:", error);
       }
-
-      return embedding;
-    } catch (error) {
-      console.error("Embedding generation failed:", error);
-      return null;
     }
+
+    // Fallback to local
+    if (!embedding && this.localClient) {
+      try {
+        const response = await this.localClient.embeddings.create({
+          model: EMBEDDING_MODEL,
+          input: text,
+        });
+        embedding = response.data[0].embedding;
+      } catch (error) {
+        console.error("Local embedding failed:", error);
+        return null;
+      }
+    }
+
+    // Cache if successful and factId provided
+    if (embedding && factId) {
+      this.cache.embeddings[factId] = embedding;
+      this.saveCache();
+    }
+
+    return embedding;
   }
 
   /**
    * Batch embed multiple texts
    *
    * Checks cache first and only generates embeddings for uncached items.
-   * More efficient than individual calls due to OpenAI batch API.
+   * Uses cloud API for batch when available.
    *
    * @param items - Array of {text, factId} to embed
    * @returns Map of factId -> embedding
@@ -161,7 +196,7 @@ export class EmbeddingService {
   ): Promise<Map<string, number[]>> {
     const result = new Map<string, number[]>();
 
-    if (!this.client) return result;
+    if (!this.isAvailable()) return result;
 
     const uncached: Array<{ text: string; factId: string; index: number }> = [];
 
@@ -174,25 +209,39 @@ export class EmbeddingService {
       }
     });
 
-    // Batch generate uncached
+    // Generate uncached (one at a time for cloud, batch for local)
     if (uncached.length > 0) {
-      try {
-        const response = await this.client.embeddings.create({
-          model: EMBEDDING_MODEL,
-          input: uncached.map((u) => u.text),
-        });
-
-        response.data.forEach((emb, i) => {
-          const factId = uncached[i].factId;
-          const embedding = emb.embedding;
-          result.set(factId, embedding);
-          this.cache.embeddings[factId] = embedding;
-        });
-
+      if (this.cloudClient) {
+        // Cloud: one at a time (rate limit friendly)
+        for (const item of uncached) {
+          try {
+            const res = await this.cloudClient.getEmbedding(item.text, item.factId);
+            result.set(item.factId, res.embedding);
+            this.cache.embeddings[item.factId] = res.embedding;
+          } catch (error) {
+            console.error(`Cloud embedding failed for ${item.factId}:`, error);
+          }
+        }
         this.saveCache();
-      } catch (error) {
-        console.error("Batch embedding failed:", error);
-        // Return what we have from cache
+      } else if (this.localClient) {
+        // Local: batch API
+        try {
+          const response = await this.localClient.embeddings.create({
+            model: EMBEDDING_MODEL,
+            input: uncached.map((u) => u.text),
+          });
+
+          response.data.forEach((emb, i) => {
+            const factId = uncached[i].factId;
+            const embedding = emb.embedding;
+            result.set(factId, embedding);
+            this.cache.embeddings[factId] = embedding;
+          });
+
+          this.saveCache();
+        } catch (error) {
+          console.error("Batch embedding failed:", error);
+        }
       }
     }
 
@@ -264,11 +313,11 @@ let sharedService: EmbeddingService | null = null;
 
 /**
  * Get or create the shared embedding service
- * @param apiKey - OpenAI API key (only used on first call)
+ * @param localApiKey - Local OpenAI API key (fallback, only used if cloud unavailable)
  */
-export function getEmbeddingService(apiKey?: string): EmbeddingService {
+export function getEmbeddingService(localApiKey?: string): EmbeddingService {
   if (!sharedService) {
-    sharedService = new EmbeddingService(apiKey);
+    sharedService = new EmbeddingService(localApiKey);
   }
   return sharedService;
 }

@@ -14,6 +14,7 @@ import { tmpdir } from "os";
 vi.mock("@arete/core", () => ({
   loadConfig: vi.fn(() => ({})),
   createCLIClient: vi.fn(),
+  getSyncService: vi.fn(() => ({ queueSync: vi.fn() })),
   safeParseContextStore: vi.fn((data) => data),
   createEmptyContextStore: vi.fn(() => ({ events: [], lastModified: new Date().toISOString() })),
 }));

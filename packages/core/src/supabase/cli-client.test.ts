@@ -29,8 +29,15 @@ import {
 
 describe("CLI Config", () => {
   const configFile = join(tmpdir(), ".arete", "config.json");
+  const originalEnv = { ...process.env };
 
   beforeEach(() => {
+    // Clear env vars that loadConfig reads
+    delete process.env.ARETE_API_KEY;
+    delete process.env.SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.OPENAI_API_KEY;
+
     // Ensure clean state
     try {
       if (existsSync(configFile)) {
@@ -42,6 +49,9 @@ describe("CLI Config", () => {
   });
 
   afterEach(() => {
+    // Restore env vars
+    process.env = { ...originalEnv };
+
     // Cleanup
     try {
       if (existsSync(configFile)) {
@@ -68,7 +78,11 @@ describe("CLI Config", () => {
     saveConfig(config);
     const loaded = loadConfig();
 
-    expect(loaded).toEqual(config);
+    // loadConfig spreads file config and adds env var fields
+    expect(loaded.apiKey).toBe(config.apiKey);
+    expect(loaded.supabaseUrl).toBe(config.supabaseUrl);
+    expect(loaded.userId).toBe(config.userId);
+    expect(loaded.email).toBe(config.email);
   });
 
   it("clears config", () => {
